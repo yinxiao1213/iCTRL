@@ -1,0 +1,56 @@
+name: build
+
+on:
+  push:
+    branches: [script-recorder]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick the newest stable Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          XCODE="$(ls -d /Applications/Xcode_*.app | grep -viE 'beta|rc' | sort -V | tail -1)"
+          echo "Using $XCODE"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version | tee env.log
+          ls -d /Applications/Xcode*.app >> env.log
+          xcrun --sdk iphoneos --show-sdk-version | tee -a env.log
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Build
+        run: |
+          set -o pipefail
+          make ipa UNSIGNED=1 2>&1 | tee build.log
+
+      - name: Publish
+        if: always()
+        run: |
+          RESULT="${{ job.status }}"
+          touch build.log env.log
+          grep -E "error:|BUILD (SUCCEEDED|FAILED)|\*\* .* \*\*|^make: |❌|🔴" build.log | sort -u | head -300 > errors.txt || true
+          printf '%s %s\n' "$GITHUB_SHA" "$RESULT" > status.txt
+          gh release view ci >/dev/null 2>&1 || gh release create ci --prerelease --title "Latest build" --notes "Built by GitHub Actions from the script-recorder branch." --target "$GITHUB_SHA"
+          FILES="status.txt errors.txt env.log"
+          tail -c 3000000 build.log > build-tail.log
+          FILES="$FILES build-tail.log"
+          for f in release/iCTRL.ipa release/iCTRLUITests-Runner.ipa; do
+            [ -f "$f" ] && FILES="$FILES $f"
+          done
+          gh release upload ci $FILES --clobber
