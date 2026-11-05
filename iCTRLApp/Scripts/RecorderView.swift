@@ -80,11 +80,7 @@ struct RecorderView: View {
                     .font(.footnote)
                     .foregroundColor(.secondary)
             }
-            Picker("模式", selection: $mode) {
-                ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
+            modes
             tools
         }
         .disabled(busy)
@@ -174,6 +170,27 @@ struct RecorderView: View {
             )
         }
         .padding(.horizontal, 8)
+    }
+
+    private var modes: some View {
+        HStack(spacing: 6) {
+            ForEach(Mode.allCases) { item in
+                Button {
+                    mode = item
+                    notice = nil
+                } label: {
+                    Text(item.rawValue)
+                        .font(.footnote.weight(.medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .foregroundColor(mode == item ? .white : .primary)
+                        .background(mode == item ? Color.accentColor : Color(.secondarySystemFill), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(mode == item ? .isSelected : [])
+            }
+        }
+        .padding(.horizontal)
     }
 
     private var tools: some View {

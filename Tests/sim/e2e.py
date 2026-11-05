@@ -233,20 +233,44 @@ def app():
     time.sleep(3)
     shot("app-6-after-tap")
 
-    press("點文字")
+    # Wait for this text before going on; nothing moves on the phone.
+    press("等文字", exact=True)
     time.sleep(6)
     shot("app-7-text-mode")
     target = find_text(["About"])
     if not check("the picture shows the General page", target is not None):
         raise SystemExit(1)
     call("tap", {"x": target["center_x"], "y": target["center_y"]})
-    check("recorded the text tap", find("已錄 3 步", 60, APP) is not None)
-    time.sleep(3)
+    check("recorded the wait", find("已錄 3 步", 15, APP) is not None)
+
+    press("點文字", exact=True)
+    time.sleep(1)
+    call("tap", {"x": target["center_x"], "y": target["center_y"]})
+    check("recorded the text tap", find("已錄 4 步", 60, APP) is not None)
+    time.sleep(6)
     shot("app-8-about")
+
+    # Only if this page says so, do the next step.
+    press("看到才做", exact=True)
+    time.sleep(1)
+    target = find_text(["Model Name"])
+    if not check("the picture shows the About page", target is not None):
+        raise SystemExit(1)
+    call("tap", {"x": target["center_x"], "y": target["center_y"]})
+    check("recorded the condition", find("已錄 5 步", 15, APP) is not None)
+
+    # A swipe on the picture is a swipe on the phone.
+    middle = target["center_x"]
+    call("drag", {"from_x": middle, "from_y": 500, "to_x": middle, "to_y": 250, "duration": 0.4})
+    check("recorded the swipe", find("已錄 6 步", 60, APP) is not None)
+    time.sleep(3)
+    shot("app-8b-swiped")
 
     press("完成")
     time.sleep(1)
     shot("app-9-steps")
+    for words in ("從頭打開「設定」", "點一下", "等畫面出現「About」", "點畫面上的「About」", "看到「Model Name」才做下面 1 步", "滑動"):
+        check(f"the list says {words}", find(words, 8, APP) is not None)
 
     press("執行", exact=True)
     time.sleep(2)
@@ -254,7 +278,7 @@ def app():
     check("the recorded script played", done.get("state") == "finished", json.dumps(done, ensure_ascii=False))
     time.sleep(1)
     shot("app-10-after-run")
-    check("the replay reached the same page", find_text(["iOS Version", "Model Name", "Software Version", "Name"]) is not None)
+    check("the replay reached the same page and scrolled it", find_text(["Available", "Capacity", "Certificate"]) is not None)
     call("launch_app", {"bundle_id": APP})
     time.sleep(2)
     shot("app-11-back")
