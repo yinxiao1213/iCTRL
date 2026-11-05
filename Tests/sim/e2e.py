@@ -161,8 +161,12 @@ def engine():
     check("recording round finished", result.get("state") == "done", {k: v for k, v in result.items() if k != "data"})
     check("round brought a picture", len(result.get("data", "")) > 1000)
     check("round brought its size", result.get("point_width", 0) > 0)
-    time.sleep(1)
-    front = call("foreground_app")
+    # Safari starts cold here, which takes a CI machine a while.
+    end = time.time() + 30
+    front = {}
+    while time.time() < end and front.get("bundle_id") != "com.apple.mobilesafari":
+        time.sleep(1)
+        front = try_call("foreground_app") or {}
     check("round went back to the caller", front.get("bundle_id") == "com.apple.mobilesafari", front)
     shot("engine-2-after-round")
     try_call("home")
@@ -195,8 +199,9 @@ def app():
     check("runner came up again", wait_server())
     time.sleep(3)
     dismiss_alerts()
-    call("launch_app", {"bundle_id": APP})
-    check("the setup list shows", find("準備", 40, APP) is not None)
+    # A timeout here only means the reply came first; the launch goes on.
+    try_call("launch_app", {"bundle_id": APP})
+    check("the setup list shows", find("準備", 60, APP) is not None)
     time.sleep(2)
     shot("app-1-setup")
 
