@@ -922,7 +922,11 @@ final class iCTRLUITests: XCTestCase, UNUserNotificationCenterDelegate {
             Self.logBuffer.append(granted ? "🔔 Notifications enabled" : "🔕 Notifications denied")
             semaphore.signal()
         }
+        // In the simulator nobody may be there to answer (Tests/sim), and the
+        // server below would never start.
+        #if !targetEnvironment(simulator)
         semaphore.wait()
+        #endif
     }
 
     // MARK: - UNUserNotificationCenterDelegate

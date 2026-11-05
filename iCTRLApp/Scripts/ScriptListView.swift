@@ -12,7 +12,9 @@ struct ScriptListView: View {
     @State private var path: [UUID] = []
     @State private var startFailed = false
 
-    private var ready: Bool { ddi.isMounted && runner.isRunning && admin.isPaired }
+    /// The runner can't start without the image, so a running one proves it.
+    private var imageReady: Bool { ddi.isMounted || runner.isRunning }
+    private var ready: Bool { runner.isRunning && admin.isPaired }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -61,13 +63,13 @@ struct ScriptListView: View {
 
     private var setupSection: some View {
         Section {
-            SetupRow(number: 1, title: "掛載開發者映像", done: ddi.isMounted,
+            SetupRow(number: 1, title: "掛載開發者映像", done: imageReady,
                      detail: "手機重開機後要再做一次。", action: "掛載") {
                 showMount = true
             }
             SetupRow(number: 2, title: "啟動自動化服務", done: runner.isRunning,
                      detail: startFailed ? "打不開，請確認 iCTRLUITests-Runner 已安裝。" : "畫面會閃一下，再自動回來。",
-                     action: "啟動", enabled: ddi.isMounted) {
+                     action: "啟動", enabled: imageReady) {
                 UIApplication.shared.open(ScriptController.startRunnerURL) { startFailed = !$0 }
             }
             SetupRow(number: 3, title: "連接 App 和服務", done: admin.isPaired,
