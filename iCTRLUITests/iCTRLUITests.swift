@@ -916,15 +916,15 @@ final class iCTRLUITests: XCTestCase, UNUserNotificationCenterDelegate {
         center.removeAllDeliveredNotifications()
         center.removeAllPendingNotificationRequests()
 
+        // In the simulator nobody may be there to answer (Tests/sim): the server
+        // would never start, and the prompt would cover what is being tested.
+        #if !targetEnvironment(simulator)
         // Request permission
         let semaphore = DispatchSemaphore(value: 0)
         center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
             Self.logBuffer.append(granted ? "🔔 Notifications enabled" : "🔕 Notifications denied")
             semaphore.signal()
         }
-        // In the simulator nobody may be there to answer (Tests/sim), and the
-        // server below would never start.
-        #if !targetEnvironment(simulator)
         semaphore.wait()
         #endif
     }
