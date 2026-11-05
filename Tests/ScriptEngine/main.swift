@@ -179,6 +179,12 @@ do {
     check("文字不見了就點原位置", s["state"]?.stringValue == "finished" && tap?.1["x"]?.doubleValue == 110, "\(s)")
 }
 
+// --- 認字的雜訊
+check("圖示邊緣認成的點不影響比對", ScriptEngine.bestMatch(.array([box("• General", x: 10, y: 20, width: 40)]), text: "General")?.y == 20)
+check("錄到的點不影響比對", ScriptEngine.bestMatch(.array([box("General", x: 10, y: 20, width: 40)]), text: "• General")?.y == 20)
+check("中文裡的空白不影響比對", ScriptEngine.bestMatch(.array([box("登 入", x: 10, y: 20, width: 40)]), text: "登入")?.y == 20)
+check("只有符號的文字不會亂配", ScriptEngine.bestMatch(.array([box("General", x: 10, y: 20, width: 40)]), text: "•") == nil)
+
 // --- 如果看到
 func ifRun(seen: Bool, negate: Bool?, skip: Int?) -> [String] {
     let phone = FakePhone()

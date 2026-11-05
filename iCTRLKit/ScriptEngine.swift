@@ -322,8 +322,11 @@ final class ScriptEngine {
         }
     }
 
+    /// Letters and digits only: OCR adds spaces inside Chinese and reads the
+    /// edge of an icon as a dot ("• General"), differently from one look to the
+    /// next.
     static func normalize(_ text: String) -> String {
-        text.lowercased().filter { !$0.isWhitespace }
+        text.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 
     /// Where to tap for `text`. An exact box beats one that only contains it;

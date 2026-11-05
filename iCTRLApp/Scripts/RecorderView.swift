@@ -48,6 +48,8 @@ struct RecorderView: View {
     @State private var waitSeconds = "2"
     @State private var doubleNext = false
     @State private var pressedAt: Date?
+    /// Reading the text on the current picture.
+    @State private var reading: Task<[TextBox], Never>?
 
     var body: some View {
         VStack(spacing: 8) {
@@ -258,20 +260,26 @@ struct RecorderView: View {
         } else if doubleNext {
             doubleNext = false
             perform(ScriptStep(kind: .doubleTap, x: from.x, y: from.y))
-        } else if let word = Self.word(at: from, in: shot) {
-            // Pages move between runs, and then a remembered spot lands on the
-            // wrong row. A word can be found again; the spot stays as the
-            // fallback for words that change. Now, it is just a tap.
-            perform(ScriptStep(kind: .tap, x: from.x, y: from.y),
-                    recordAs: ScriptStep(kind: .tapText, x: from.x, y: from.y, text: word, timeout: 6))
         } else {
-            perform(ScriptStep(kind: .tap, x: from.x, y: from.y))
+            busy = true
+            Task {
+                // Pages move between runs, and then a remembered spot lands on
+                // the wrong row. A word can be found again; the spot stays as the
+                // fallback for words that change. Now, it is just a tap.
+                let tap = ScriptStep(kind: .tap, x: from.x, y: from.y)
+                let boxes = await reading?.value ?? shot.boxes
+                if let word = Self.word(at: from, in: boxes) {
+                    perform(tap, recordAs: ScriptStep(kind: .tapText, x: from.x, y: from.y, text: word, timeout: 6))
+                } else {
+                    perform(tap)
+                }
+            }
         }
     }
 
     /// The word under a tap, if it can be told apart from a clock or a count.
-    private static func word(at point: CGPoint, in shot: Shot) -> String? {
-        guard let box = shot.boxes.first(where: { $0.rect.insetBy(dx: -4, dy: -4).contains(point) }) else { return nil }
+    private static func word(at point: CGPoint, in boxes: [TextBox]) -> String? {
+        guard let box = boxes.first(where: { $0.rect.insetBy(dx: -4, dy: -4).contains(point) }) else { return nil }
         let letters = box.label.filter { $0.isLetter }
         guard letters.count >= 2, box.label.count <= 30 else { return nil }
         return box.label
@@ -362,8 +370,10 @@ struct RecorderView: View {
             let height = result["point_height"] as? Double ?? Double(result["point_height"] as? Int ?? 0)
             let size = width > 0 && height > 0 ? CGSize(width: width, height: height) : image.size
             shot = Shot(image: image, size: size)
+            let task = Task { await Self.readText(image, size: size) }
+            reading = task
             Task {
-                let boxes = await Self.readText(image, size: size)
+                let boxes = await task.value
                 if shot?.image === image { shot?.boxes = boxes }
             }
         }
@@ -400,9 +410,12 @@ struct RecorderView: View {
             try? VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:]).perform([request])
             return (request.results ?? []).compactMap { observation -> TextBox? in
                 guard let top = observation.topCandidates(1).first, top.confidence >= 0.3 else { return nil }
+                // The edge of an icon next to the text reads as a dot or a dash.
+                let label = top.string.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+                guard !label.isEmpty else { return nil }
                 // Vision's origin is bottom-left.
                 let box = observation.boundingBox
-                return TextBox(label: top.string,
+                return TextBox(label: label,
                                rect: CGRect(x: box.minX * size.width, y: (1 - box.maxY) * size.height,
                                             width: box.width * size.width, height: box.height * size.height))
             }
