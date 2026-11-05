@@ -58,6 +58,8 @@ struct ScriptEditorView: View {
                     Text("回上一頁完成「準備」後才能錄製和執行。")
                 } else if !startsInAnApp {
                     Text("第一步不是打開 App，腳本會從目前的畫面開始點。")
+                } else {
+                    Text("手機一鎖定腳本就會停。腳本要跑很久的話，到「設定 → 螢幕顯示與亮度 → 自動鎖定」改成永不。")
                 }
             }
 
@@ -178,6 +180,13 @@ struct StepEditView: View {
                             get: { step.text ?? "" },
                             set: { step.text = $0 }
                         ))
+                    }
+                }
+                if step.kind == .openApp {
+                    Section {
+                        Toggle("每次都從頭打開", isOn: flag(\.restart))
+                    } footer: {
+                        Text("先關掉這個 App 再打開，腳本才會從同一個畫面開始。")
                     }
                 }
                 if step.kind == .type {

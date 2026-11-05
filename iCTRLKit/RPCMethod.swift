@@ -75,7 +75,7 @@ struct RPCMethodRegistry {
             name: "rec_result",
             description: "Outcome of rec_step.",
             params: [RPCParamDef(name: "job_id", type: "string", required: true, description: "From rec_step")],
-            returns: "{state: running|done, data?, point_width?, point_height?, items?, foreground_app?, error?, return_failed?}"
+            returns: "{state: running|done, data?, point_width?, point_height?, foreground_app?, error?, return_failed?}"
         ),
         RPCMethodDef(
             name: "foreground_app",

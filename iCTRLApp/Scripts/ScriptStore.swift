@@ -199,7 +199,7 @@ enum ScriptJSON {
 extension ScriptStep {
     var title: String {
         switch kind {
-        case .openApp: return "打開「\(appName ?? bundleId ?? "?")」"
+        case .openApp: return "\(restart == true ? "從頭打開" : "打開")「\(appName ?? bundleId ?? "?")」"
         case .tap: return "點一下 \(Self.spot(x, y))"
         case .doubleTap: return "連點兩下 \(Self.spot(x, y))"
         case .longPress: return "長按 \(Self.spot(x, y)) \(Self.number(duration ?? 1)) 秒"

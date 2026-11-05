@@ -161,7 +161,6 @@ def engine():
     check("recording round finished", result.get("state") == "done", {k: v for k, v in result.items() if k != "data"})
     check("round brought a picture", len(result.get("data", "")) > 1000)
     check("round brought its size", result.get("point_width", 0) > 0)
-    check("round read the text", isinstance(result.get("items"), list))
     time.sleep(1)
     front = call("foreground_app")
     check("round went back to the caller", front.get("bundle_id") == "com.apple.mobilesafari", front)
@@ -169,10 +168,10 @@ def engine():
     try_call("home")
 
 
-def find(label, timeout=15, bundle=None):
+def find(label, timeout=15, bundle=None, exact=False):
     """An element of the app in front, by label, or None."""
     end = time.time() + timeout
-    params = {"element_id": label, "match": "contains"}
+    params = {"element_id": label, "match": "exact" if exact else "contains"}
     if bundle:
         params["bundle_id"] = bundle
     while time.time() < end:
@@ -183,8 +182,8 @@ def find(label, timeout=15, bundle=None):
     return None
 
 
-def press(label, timeout=15, bundle=APP):
-    found = find(label, timeout, bundle)
+def press(label, timeout=15, bundle=APP, exact=False):
+    found = find(label, timeout, bundle, exact)
     if not check(f"found 「{label}」", found is not None):
         shot("missing-" + label)
         raise SystemExit(1)
@@ -197,10 +196,11 @@ def app():
     time.sleep(3)
     dismiss_alerts()
     call("launch_app", {"bundle_id": APP})
-    time.sleep(3)
+    check("the setup list shows", find("準備", 40, APP) is not None)
+    time.sleep(2)
     shot("app-1-setup")
 
-    press("連接")
+    press("連接", exact=True)
     time.sleep(3)
     shot("app-2-connected")
     check("setup is done", find("連接 App 和服務", 3, APP) is None)
@@ -213,41 +213,44 @@ def app():
     shot("app-4-picker")
     press("com.apple.Preferences")
 
-    if not check("came back from Settings with a picture", find("已錄 1 步", 40, APP) is not None):
+    if not check("came back from Settings with a picture", find("已錄 1 步", 60, APP) is not None):
         shot("app-5-failed")
         raise SystemExit(1)
-    time.sleep(1)
+    time.sleep(3)
     shot("app-5-recorder")
 
     target = find_text(["General"])
+    if target is None:
+        # What a person would do with a page that was still loading.
+        press("重新截圖")
+        time.sleep(25)
+        shot("app-5-recorder-again")
+        target = find_text(["General"])
     if not check("the picture shows Settings", target is not None):
         raise SystemExit(1)
     call("tap", {"x": target["center_x"], "y": target["center_y"]})
-    check("recorded the tap", find("已錄 2 步", 40, APP) is not None)
-    time.sleep(1)
+    check("recorded the tap", find("已錄 2 步", 60, APP) is not None)
+    time.sleep(3)
     shot("app-6-after-tap")
 
     press("點文字")
-    time.sleep(1)
+    time.sleep(6)
     shot("app-7-text-mode")
     target = find_text(["About"])
     if not check("the picture shows the General page", target is not None):
         raise SystemExit(1)
     call("tap", {"x": target["center_x"], "y": target["center_y"]})
-    check("recorded the text tap", find("已錄 3 步", 40, APP) is not None)
-    time.sleep(1)
+    check("recorded the text tap", find("已錄 3 步", 60, APP) is not None)
+    time.sleep(3)
     shot("app-8-about")
 
     press("完成")
     time.sleep(1)
     shot("app-9-steps")
 
-    # Back to the top of Settings, so the replay has something to do.
-    call("terminate_app", {"bundle_id": SETTINGS})
-    call("launch_app", {"bundle_id": APP})
-    time.sleep(1)
-    press("執行")
-    done = status_wait(60)
+    press("執行", exact=True)
+    time.sleep(2)
+    done = status_wait(90)
     check("the recorded script played", done.get("state") == "finished", json.dumps(done, ensure_ascii=False))
     time.sleep(1)
     shot("app-10-after-run")

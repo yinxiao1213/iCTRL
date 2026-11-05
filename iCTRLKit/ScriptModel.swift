@@ -41,11 +41,14 @@ struct ScriptStep: Codable, Identifiable, Equatable {
     var negate: Bool?
     var clear: Bool?
     var submit: Bool?
+    /// `open_app`: close the app first, so a replay starts from its first
+    /// screen and not from wherever it was left.
+    var restart: Bool?
 
     init(kind: Kind, x: Double? = nil, y: Double? = nil, toX: Double? = nil, toY: Double? = nil,
          duration: Double? = nil, text: String? = nil, bundleId: String? = nil, appName: String? = nil,
          timeout: Double? = nil, skip: Int? = nil, negate: Bool? = nil,
-         clear: Bool? = nil, submit: Bool? = nil) {
+         clear: Bool? = nil, submit: Bool? = nil, restart: Bool? = nil) {
         self.kind = kind
         self.x = x
         self.y = y
@@ -60,10 +63,11 @@ struct ScriptStep: Codable, Identifiable, Equatable {
         self.negate = negate
         self.clear = clear
         self.submit = submit
+        self.restart = restart
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, kind, x, y, duration, text, timeout, skip, negate, clear, submit
+        case id, kind, x, y, duration, text, timeout, skip, negate, clear, submit, restart
         case toX = "to_x"
         case toY = "to_y"
         case bundleId = "bundle_id"
@@ -88,5 +92,6 @@ struct ScriptStep: Codable, Identifiable, Equatable {
         negate = try c.decodeIfPresent(Bool.self, forKey: .negate)
         clear = try c.decodeIfPresent(Bool.self, forKey: .clear)
         submit = try c.decodeIfPresent(Bool.self, forKey: .submit)
+        restart = try c.decodeIfPresent(Bool.self, forKey: .restart)
     }
 }

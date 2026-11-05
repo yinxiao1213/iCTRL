@@ -11,9 +11,12 @@ UDID="$(xcrun simctl list devices available -j | python3 -c '
 import json, sys
 devices = json.load(sys.stdin)["devices"]
 runtimes = sorted((r for r in devices if "iOS-27" in r), reverse=True)
-print(next(d["udid"] for r in runtimes for d in devices[r] if d["name"].startswith("iPhone")))
+phones = [d for r in runtimes for d in devices[r] if d["name"].startswith("iPhone")]
+plain = [d for d in phones if d["name"].split()[-1].isdigit()]
+print((plain or phones)[0]["udid"], (plain or phones)[0]["name"], file=sys.stdout)
 ')"
 echo "simulator: $UDID"
+UDID="${UDID%% *}"
 xcrun simctl boot "$UDID"
 xcrun simctl bootstatus "$UDID" -b
 xcrun simctl install "$UDID" "$PRODUCTS/iCTRL.app"

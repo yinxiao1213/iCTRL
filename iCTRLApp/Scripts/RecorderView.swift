@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Vision
 
 /// Recording, inside the app.
 ///
@@ -22,7 +23,8 @@ struct RecorderView: View {
     struct Shot {
         let image: UIImage
         let size: CGSize
-        let boxes: [TextBox]
+        /// Filled in shortly after the picture arrives.
+        var boxes: [TextBox] = []
     }
 
     enum Mode: String, CaseIterable, Identifiable {
@@ -73,6 +75,10 @@ struct RecorderView: View {
                     .font(.footnote)
                     .foregroundColor(.orange)
                     .padding(.horizontal)
+            } else if mode != .touch, shot?.boxes.isEmpty == true {
+                Text("還在認字，或這個畫面沒有文字。")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
             }
             Picker("模式", selection: $mode) {
                 ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
@@ -89,7 +95,10 @@ struct RecorderView: View {
                 if bundleId == ScriptEngine.springboard {
                     perform(ScriptStep(kind: .home))
                 } else {
-                    perform(ScriptStep(kind: .openApp, bundleId: bundleId, appName: app.name))
+                    // The first app starts from its first screen, so a replay
+                    // starts where this recording does.
+                    perform(ScriptStep(kind: .openApp, bundleId: bundleId, appName: app.name,
+                                       restart: script.steps.isEmpty ? true : nil))
                 }
             }
             .environmentObject(admin)
@@ -170,6 +179,9 @@ struct RecorderView: View {
     private var tools: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                tool("重新截圖", "arrow.clockwise") {
+                    Task { await round(step: nil, switchTo: target, record: false) }
+                }
                 tool("換 App", "app.badge") { showPicker = true }
                 tool("輸入文字", "keyboard") {
                     typed = ""
@@ -178,9 +190,6 @@ struct RecorderView: View {
                 tool("等待", "clock") { askWait = true }
                 tool(doubleNext ? "下一下連點" : "連點", "hand.tap.fill") { doubleNext.toggle() }
                 tool("回主畫面", "house") { perform(ScriptStep(kind: .home)) }
-                tool("重新截圖", "arrow.clockwise") {
-                    Task { await round(step: nil, switchTo: target, record: false) }
-                }
             }
             .padding(.horizontal)
             .padding(.bottom, 8)
@@ -320,7 +329,11 @@ struct RecorderView: View {
             let width = result["point_width"] as? Double ?? Double(result["point_width"] as? Int ?? 0)
             let height = result["point_height"] as? Double ?? Double(result["point_height"] as? Int ?? 0)
             let size = width > 0 && height > 0 ? CGSize(width: width, height: height) : image.size
-            shot = Shot(image: image, size: size, boxes: Self.boxes(result["items"]))
+            shot = Shot(image: image, size: size)
+            Task {
+                let boxes = await Self.readText(image, size: size)
+                if shot?.image === image { shot?.boxes = boxes }
+            }
         }
         if let error = result["error"] as? String {
             notice = "這一步沒有錄進去：\(error)"
@@ -344,18 +357,24 @@ struct RecorderView: View {
         mode = .touch
     }
 
-    private static func boxes(_ value: Any?) -> [TextBox] {
-        guard let items = value as? [[String: Any]] else { return [] }
-        return items.compactMap { item in
-            guard let label = item["label"] as? String,
-                  let x = number(item["x"]), let y = number(item["y"]),
-                  let width = number(item["width"]), let height = number(item["height"]) else { return nil }
-            return TextBox(label: label, rect: CGRect(x: x, y: y, width: width, height: height))
-        }
-    }
-
-    private static func number(_ value: Any?) -> Double? {
-        (value as? NSNumber)?.doubleValue
+    /// Text on the picture, in phone points.
+    private static func readText(_ image: UIImage, size: CGSize) async -> [TextBox] {
+        await Task.detached(priority: .userInitiated) {
+            guard let cgImage = image.cgImage else { return [] }
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = false
+            request.recognitionLanguages = ["zh-Hant", "zh-Hans", "en-US"]
+            try? VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:]).perform([request])
+            return (request.results ?? []).compactMap { observation -> TextBox? in
+                guard let top = observation.topCandidates(1).first, top.confidence >= 0.3 else { return nil }
+                // Vision's origin is bottom-left.
+                let box = observation.boundingBox
+                return TextBox(label: top.string,
+                               rect: CGRect(x: box.minX * size.width, y: (1 - box.maxY) * size.height,
+                                            width: box.width * size.width, height: box.height * size.height))
+            }
+        }.value
     }
 }
 

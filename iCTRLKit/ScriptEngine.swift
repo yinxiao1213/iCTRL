@@ -224,7 +224,10 @@ final class ScriptEngine {
         switch step.kind {
         case .openApp:
             guard let id = step.bundleId, !id.isEmpty else { throw Abort.failed("沒有指定 App") }
+            // Best effort: a replay from the wrong screen beats no replay.
+            if step.restart == true { _ = try? call("terminate_app", ["bundle_id": .string(id)]) }
             try call("launch_app", ["bundle_id": .string(id)])
+            try waitForStillScreen(limit: 8)
         case .tap:
             try call("tap", try point(step))
         case .doubleTap:
@@ -266,6 +269,29 @@ final class ScriptEngine {
         }
         return 0
     }
+
+    /// Wait until the screen holds still, or `limit` runs out.
+    ///
+    /// A cold-started app shows a blank page or a splash for seconds, and a tap
+    /// or a picture taken then is wasted. Small frames are compared: identical
+    /// JPEGs mean nothing moved, and a tiny one is a screen with nothing on it yet.
+    private func waitForStillScreen(limit: TimeInterval) throws {
+        let end = now() + limit
+        var previous: String?
+        while now() < end {
+            try checkpoint()
+            let frame = try? call("screenshot", ["scale": .double(Self.frameScale), "format": .string("jpeg"),
+                                                 "quality": .double(0.3)])
+            guard let data = frame?["data"]?.stringValue else { return }
+            if data == previous, data.count >= Self.blankFrameSize { return }
+            previous = data
+            try pause(0.4)
+        }
+    }
+
+    static let frameScale = 0.25
+    /// Base64 length under which a frame at `frameScale` counts as blank.
+    private static let blankFrameSize = 2000
 
     private func wanted(_ step: ScriptStep) throws -> String {
         guard let text = step.text, !text.isEmpty else { throw Abort.failed("這一步沒有指定文字") }
@@ -372,6 +398,7 @@ final class ScriptEngine {
             }
             if let step = step { try execute(step) }
             try pause(settle)
+            try waitForStillScreen(limit: 3)
         } catch Abort.failed(let message) {
             out["error"] = .string(message)
         } catch Abort.stopped(let reason) {
@@ -387,8 +414,8 @@ final class ScriptEngine {
         } catch Abort.failed(let message) {
             if out["error"] == nil { out["error"] = .string(message) }
         } catch {}
-        // Optional extras: recording still works without them.
-        if let texts = try? call("screen_text") { out["items"] = texts["items"] }
+        // Optional: recording still works without it. Text on the picture is
+        // read by the app, so this round doesn't have to wait for it.
         if let front = try? call("foreground_app") { out["foreground_app"] = front["bundle_id"] }
         return out
     }
