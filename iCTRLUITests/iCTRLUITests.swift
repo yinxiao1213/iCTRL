@@ -3,10 +3,48 @@ import UserNotifications
 import UIKit
 import Network
 
+/// Scripts drive the phone through exactly what an RPC goes through: the serial
+/// UI queue, the main-thread hop, and the guard that turns an Obj-C exception
+/// into an error. In this file because those are private.
+extension iCTRLUITests: ScriptDriver {
+    func scriptPerform(_ method: String, _ params: [String: JSONValue]) -> ([String: JSONValue]?, JSONRPCError?) {
+        if let tripped = uiBreakerMessage() { return (nil, .serverError(tripped)) }
+        var result: ([String: JSONValue]?, JSONRPCError?) = (nil, .internalError)
+        rpcQueue.sync {
+            setUIInFlight(method)
+            Self.logBuffer.append("→ [script] \(method) \(Self.summarizeParams(params))")
+            let work = {
+                guard let handler = self.actionHandler else { return }
+                let reason = ObjCException.catching {
+                    result = handler.dispatch(method: method, params: params)
+                }
+                if let reason = reason { result = (nil, .serverError("\(method) failed: \(reason)")) }
+            }
+            if Self.mainThreadMethods.contains(method) && !Thread.isMainThread {
+                DispatchQueue.main.sync(execute: work)
+            } else {
+                work()
+            }
+            setUIInFlight(nil)
+            noteUISuccess()
+        }
+        if let error = result.1 { Self.logBuffer.append("← ERR [script] \(method): \(error.message)") }
+        return result
+    }
+
+    var scriptPhoneLocked: Bool { LockStateMonitor.shared().isLocked }
+
+    func scriptNotify(title: String, body: String) {
+        sendNotification(title: title, body: body, identifier: "ictrl.script.result")
+    }
+}
+
 final class iCTRLUITests: XCTestCase, UNUserNotificationCenterDelegate {
     private var server: JSONRPCServer?
     private var app: XCUIApplication!
     private var actionHandler: ActionHandler?
+    /// Plays scripts and serves on-phone recording (see ScriptEngine).
+    private var scriptEngine: ScriptEngine?
     private var pendingAuthCompletions: [String: (Bool) -> Void] = [:]
     /// Notification id of the pairing request awaiting an answer (at most one).
     private var currentAuthRequestID: String?
@@ -406,6 +444,7 @@ final class iCTRLUITests: XCTestCase, UNUserNotificationCenterDelegate {
         }
 
         actionHandler = ActionHandler(app: app)
+        scriptEngine = ScriptEngine(driver: self)
 
         // Restore persisted preferences (fresh install → local only, port 8200)
         remoteAccessEnabled = Self.persistedRemoteAccess
@@ -1011,7 +1050,7 @@ final class iCTRLUITests: XCTestCase, UNUserNotificationCenterDelegate {
         "type", "clear_text", "screenshot", "page_source", "view_tree", "ui_tree",
         "scroll_to_element", "scroll_to", "find_element", "tap_element", "find_and_tap",
         "launch_app", "activate_app", "terminate_app",
-        "home", "lock", "unlock",
+        "home", "lock", "unlock", "foreground_app",
         // device_info reads app.frame to report the coordinate space. That is an
         // XCUITest call, so it must hop to the main thread — and it cannot use
         // UIScreen instead: the runner runs in iOS compatibility mode and would
@@ -1039,6 +1078,9 @@ final class iCTRLUITests: XCTestCase, UNUserNotificationCenterDelegate {
         // element. Belongs here precisely because you want to run it WHILE the
         // UI channel is wedged, to find out what the snapshot API supports.
         "snapshot_api",
+        // These only start work or read its state. The UI calls they lead to
+        // go through scriptPerform, onto the serial UI queue like any other.
+        "script_run", "script_stop", "script_status", "rec_step", "rec_result",
     ]
 
     /// Compact one-line summary of the most useful params for the request log.
@@ -1242,6 +1284,7 @@ final class iCTRLUITests: XCTestCase, UNUserNotificationCenterDelegate {
             // read with their own request lines. They still count in timing
             // stats, and a failure is still logged.
             let quiet = method == "logs" || method == "recent_logs"
+                || method == "script_status" || method == "rec_result"
                 || (method == "config" && (params ?? [:]).keys.allSatisfy { $0 == JSONRPCServer.peerSourceParam })
 
             // Circuit breaker: once the UI channel has hung repeatedly, stop
@@ -1285,6 +1328,8 @@ final class iCTRLUITests: XCTestCase, UNUserNotificationCenterDelegate {
                 let work = {
                     if method == "config" {
                         result = self.handleConfig(params)
+                    } else if ScriptEngine.methods.contains(method), let engine = self.scriptEngine {
+                        result = engine.handle(method: method, params: params)
                     } else if let handler = self.actionHandler {
                         let reason = ObjCException.catching {
                             result = handler.dispatch(method: method, params: params)

@@ -174,6 +174,22 @@ final class RunnerAdmin: ObservableObject {
         }
     }
 
+    // MARK: - Scripts
+
+    /// A call for the script screens, which report errors themselves. A key the
+    /// runner no longer takes is noticed here, so they all go back to "connect".
+    func rpc(_ method: String, _ params: [String: Any] = [:], timeout: TimeInterval = 15) async throws -> [String: Any] {
+        do {
+            return try await client.call(method, params, timeout: timeout)
+        } catch RunnerClient.Failure.keyRejected {
+            isPaired = false
+            throw RunnerClient.Failure.keyRejected
+        } catch RunnerClient.Failure.notPaired {
+            isPaired = false
+            throw RunnerClient.Failure.notPaired
+        }
+    }
+
     // MARK: - Logs
 
     func loadLogs() async {

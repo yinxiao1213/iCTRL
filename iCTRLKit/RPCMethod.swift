@@ -37,6 +37,53 @@ struct RPCMethodRegistry {
             returns: "{ticket, expires_in (seconds), hint}"
         ),
         RPCMethodDef(
+            name: "script_run",
+            description: "Play a script of recorded steps in the runner. Returns at once; read progress with script_status. Locking the phone stops it.",
+            params: [
+                RPCParamDef(name: "steps", type: "array", required: true, description: "Steps as saved by the app: {kind, x, y, to_x, to_y, duration, text, bundle_id, timeout, skip, negate, clear, submit}"),
+                RPCParamDef(name: "loops", type: "number", required: false, description: "Times to repeat (default 1); 0 = until stopped"),
+                RPCParamDef(name: "name", type: "string", required: false, description: "Shown in status and notifications"),
+            ],
+            returns: "Same as script_status"
+        ),
+        RPCMethodDef(
+            name: "script_stop",
+            description: "Stop the running script at its next checkpoint.",
+            params: [],
+            returns: "Same as script_status"
+        ),
+        RPCMethodDef(
+            name: "script_status",
+            description: "State of the current or last script.",
+            params: [],
+            returns: "{state: idle|running|stopping|finished|failed|stopped, name, step_index, step_count, loop, loops, error?, detail?}"
+        ),
+        RPCMethodDef(
+            name: "rec_step",
+            description: "One recording round: bring bundle_id to the front, run step, capture the screen, return to the caller. Returns a job_id at once, because the caller is suspended while this runs.",
+            params: [
+                RPCParamDef(name: "step", type: "object", required: false, description: "The step to perform; omit to only capture"),
+                RPCParamDef(name: "bundle_id", type: "string", required: false, description: "App to bring to the front first; com.apple.springboard = the Home Screen"),
+                RPCParamDef(name: "return_bundle_id", type: "string", required: false, description: "App to go back to afterwards"),
+                RPCParamDef(name: "return_url", type: "string", required: false, description: "URL to open if return_bundle_id fails"),
+                RPCParamDef(name: "settle", type: "number", required: false, description: "Seconds to wait before capturing (default 0.6)"),
+                RPCParamDef(name: "scale", type: "number", required: false, description: "Screenshot pixels per point (default 2)"),
+            ],
+            returns: "{job_id}"
+        ),
+        RPCMethodDef(
+            name: "rec_result",
+            description: "Outcome of rec_step.",
+            params: [RPCParamDef(name: "job_id", type: "string", required: true, description: "From rec_step")],
+            returns: "{state: running|done, data?, point_width?, point_height?, items?, foreground_app?, error?, return_failed?}"
+        ),
+        RPCMethodDef(
+            name: "foreground_app",
+            description: "Bundle id of the app in front, when it can be named. iOS 27 reports only a process id, so an app this runner never opened may come back empty.",
+            params: [],
+            returns: "{bundle_id?}"
+        ),
+        RPCMethodDef(
             name: "device_info",
             description: "Get device name, model, OS version, the coordinate space (point size for tap/swipe, pixel size for screenshots, scale), AND the server's identity: server_version, protocol_version, and a capabilities array — so ONE device_info call gives you both the device and what this server supports (no separate /schema fetch for feature detection). CALL THIS FIRST before any coordinate-based action.",
             params: [],

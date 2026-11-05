@@ -1010,6 +1010,10 @@ class ActionHandler {
         switch method {
         case "device_info":
             return deviceInfo()
+        case "foreground_app":
+            var out: [String: JSONValue] = [:]
+            if let bundleId = resolveForegroundBundleId() { out["bundle_id"] = .string(bundleId) }
+            return (out, nil)
         case "screenshot":
             return screenshot(cmd)
         case "tap":
@@ -1118,7 +1122,7 @@ class ActionHandler {
     /// Every dispatchable method name, including aliases — the source of truth for
     /// "did you mean" suggestions. Keep in sync with the switch above.
     private static let knownMethods: [String] = [
-        "activate_app", "clear_text", "device_info", "double_tap", "drag", "snapshot_api",
+        "activate_app", "clear_text", "device_info", "double_tap", "drag", "foreground_app", "snapshot_api",
         "find_and_tap", "find_element", "home", "installed_apps", "is_locked",
         "launch_app", "list_apps", "lock", "long_press", "open", "open_url",
         "page", "page_down", "page_source", "page_up", "reset", "resolve_app",

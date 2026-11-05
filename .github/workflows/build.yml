@@ -34,17 +34,22 @@ jobs:
       - name: Install xcodegen
         run: brew install xcodegen
 
+      - name: Engine tests
+        run: |
+          set -o pipefail
+          bash Scripts/test-script-engine.sh 2>&1 | tee build.log
+
       - name: Build
         run: |
           set -o pipefail
-          make ipa UNSIGNED=1 2>&1 | tee build.log
+          make ipa UNSIGNED=1 2>&1 | tee -a build.log
 
       - name: Publish
         if: always()
         run: |
           RESULT="${{ job.status }}"
           touch build.log env.log
-          grep -E "error:|BUILD (SUCCEEDED|FAILED)|\*\* .* \*\*|^make: |❌|🔴" build.log | sort -u | head -300 > errors.txt || true
+          grep -E "error:|FAIL |passed$|BUILD (SUCCEEDED|FAILED)|\*\* .* \*\*|^make: |❌|🔴" build.log | sort -u | head -300 > errors.txt || true
           printf '%s %s\n' "$GITHUB_SHA" "$RESULT" > status.txt
           gh release view ci >/dev/null 2>&1 || gh release create ci --prerelease --title "Latest build" --notes "Built by GitHub Actions from the script-recorder branch." --target "$GITHUB_SHA"
           FILES="status.txt errors.txt env.log"

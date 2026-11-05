@@ -82,10 +82,8 @@ struct DDIMountView: View {
             .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
                 if !tunnelUp { refreshVPNState() }
             }
-            .fileImporter(isPresented: $showPairingPicker,
-                          allowedContentTypes: PairingFileStore.supportedContentTypes) { result in
-                switch result {
-                case .success(let url):
+            .sheet(isPresented: $showPairingPicker) {
+                PairingFilePicker { url in
                     do {
                         try PairingFileStore.importFile(from: url)
                         hasPairingFile = true
@@ -93,9 +91,8 @@ struct DDIMountView: View {
                     } catch {
                         pairingError = error.localizedDescription
                     }
-                case .failure(let error):
-                    pairingError = error.localizedDescription
                 }
+                .ignoresSafeArea()
             }
         }
     }
