@@ -150,6 +150,35 @@ do {
     check("長句裡的字會點在字上", tap?.1["x"]?.doubleValue == 160, "\(String(describing: tap))")
 }
 
+// --- 錄製時點在文字上的點擊
+do {
+    let phone = FakePhone()
+    phone.answers["screen_text"] = { _ in (["items": .array([box("確定", x: 100, y: 100, width: 40), box("確定", x: 100, y: 600, width: 40)])], nil) }
+    let engine = make(phone)
+    _ = start(engine, [ScriptStep(kind: .tapText, x: 110, y: 590, text: "確定", timeout: 5)])
+    waitDone(engine)
+    let tap = phone.calls.first { $0.0 == "tap" }
+    check("同樣的字挑離原位置最近的", tap?.1["y"]?.doubleValue == 600, "\(String(describing: tap))")
+}
+do {
+    let phone = FakePhone()
+    phone.answers["screen_text"] = { _ in (["items": .array([box("General", x: 100, y: 250, width: 60)])], nil) }
+    let engine = make(phone)
+    _ = start(engine, [ScriptStep(kind: .tapText, x: 110, y: 400, text: "General", timeout: 5)])
+    waitDone(engine)
+    let tap = phone.calls.first { $0.0 == "tap" }
+    check("頁面移動時跟著文字走", tap?.1["y"]?.doubleValue == 250, "\(String(describing: tap))")
+}
+do {
+    let phone = FakePhone()
+    phone.answers["screen_text"] = { _ in (["items": .array([box("別的字")])], nil) }
+    let engine = make(phone)
+    _ = start(engine, [ScriptStep(kind: .tapText, x: 110, y: 400, text: "會變的字", timeout: 2)])
+    let s = waitDone(engine)
+    let tap = phone.calls.first { $0.0 == "tap" }
+    check("文字不見了就點原位置", s["state"]?.stringValue == "finished" && tap?.1["x"]?.doubleValue == 110, "\(s)")
+}
+
 // --- 如果看到
 func ifRun(seen: Bool, negate: Bool?, skip: Int?) -> [String] {
     let phone = FakePhone()

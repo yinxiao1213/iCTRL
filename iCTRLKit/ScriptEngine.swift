@@ -259,10 +259,13 @@ final class ScriptEngine {
             }
         case .tapText:
             let text = try wanted(step)
-            guard let hit = try look(for: text, timeout: step.timeout ?? 30) else {
+            var spot: (x: Double, y: Double)?
+            if let x = step.x, let y = step.y { spot = (x, y) }
+            let hit = try look(for: text, timeout: step.timeout ?? 30, near: spot) ?? spot
+            guard let target = hit else {
                 throw Abort.failed("等了 \(Self.seconds(step.timeout ?? 30)) 秒都沒看到「\(text)」")
             }
-            try call("tap", ["x": .double(hit.x), "y": .double(hit.y)])
+            try call("tap", ["x": .double(target.x), "y": .double(target.y)])
         case .ifText:
             let seen = try look(for: try wanted(step), timeout: step.timeout ?? 0) != nil
             return seen != (step.negate == true) ? 0 : max(0, step.skip ?? 1)
@@ -307,12 +310,13 @@ final class ScriptEngine {
     /// Asks for every text box and matches here instead of passing `element_id`:
     /// OCR often puts spaces inside Chinese ("登 入"), and the runner's filter
     /// is a plain substring test.
-    private func look(for text: String, timeout: TimeInterval) throws -> (x: Double, y: Double)? {
+    private func look(for text: String, timeout: TimeInterval,
+                      near spot: (x: Double, y: Double)? = nil) throws -> (x: Double, y: Double)? {
         let end = now() + timeout
         while true {
             try checkpoint()
             let result = try call("screen_text")
-            if let hit = Self.bestMatch(result["items"], text: text) { return hit }
+            if let hit = Self.bestMatch(result["items"], text: text, near: spot) { return hit }
             if now() >= end { return nil }
             try pause(0.5)
         }
@@ -322,29 +326,36 @@ final class ScriptEngine {
         text.lowercased().filter { !$0.isWhitespace }
     }
 
-    /// Where to tap for `text`: an exact box wins; otherwise the first box that
-    /// contains it, aimed at the words inside a longer line rather than the
-    /// line's middle.
-    static func bestMatch(_ value: JSONValue?, text: String) -> (x: Double, y: Double)? {
+    /// Where to tap for `text`. An exact box beats one that only contains it;
+    /// inside a longer line the tap aims at the words, not the line's middle.
+    /// Among equals the one nearest `spot` wins, else the first.
+    static func bestMatch(_ value: JSONValue?, text: String,
+                          near spot: (x: Double, y: Double)? = nil) -> (x: Double, y: Double)? {
         guard case .array(let items)? = value else { return nil }
         let want = normalize(text)
         guard !want.isEmpty else { return nil }
-        var partial: (x: Double, y: Double)?
+        var exact: [(x: Double, y: Double)] = []
+        var partial: [(x: Double, y: Double)] = []
         for item in items {
             guard let box = item.objectValue, let label = box["label"]?.stringValue,
                   let cx = box["center_x"]?.doubleValue, let cy = box["center_y"]?.doubleValue else { continue }
             let have = normalize(label)
-            if have == want { return (cx, cy) }
-            guard partial == nil, let range = have.range(of: want) else { continue }
+            if have == want {
+                exact.append((cx, cy))
+                continue
+            }
+            guard let range = have.range(of: want) else { continue }
             let before = Double(have.distance(from: have.startIndex, to: range.lowerBound))
             let share = (before + Double(want.count) / 2) / Double(have.count)
             if let x = box["x"]?.doubleValue, let width = box["width"]?.doubleValue {
-                partial = (x + width * share, cy)
+                partial.append((x + width * share, cy))
             } else {
-                partial = (cx, cy)
+                partial.append((cx, cy))
             }
         }
-        return partial
+        let pool = exact.isEmpty ? partial : exact
+        guard let spot = spot else { return pool.first }
+        return pool.min { hypot($0.x - spot.x, $0.y - spot.y) < hypot($1.x - spot.x, $1.y - spot.y) }
     }
 
     // MARK: - Recording

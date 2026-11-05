@@ -197,7 +197,7 @@ struct RecorderView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 tool("重新截圖", "arrow.clockwise") {
-                    Task { await round(step: nil, switchTo: target, record: false) }
+                    Task { await round(step: nil, switchTo: target, recordAs: nil) }
                 }
                 tool("換 App", "app.badge") { showPicker = true }
                 tool("輸入文字", "keyboard") {
@@ -258,9 +258,23 @@ struct RecorderView: View {
         } else if doubleNext {
             doubleNext = false
             perform(ScriptStep(kind: .doubleTap, x: from.x, y: from.y))
+        } else if let word = Self.word(at: from, in: shot) {
+            // Pages move between runs, and then a remembered spot lands on the
+            // wrong row. A word can be found again; the spot stays as the
+            // fallback for words that change. Now, it is just a tap.
+            perform(ScriptStep(kind: .tap, x: from.x, y: from.y),
+                    recordAs: ScriptStep(kind: .tapText, x: from.x, y: from.y, text: word, timeout: 6))
         } else {
             perform(ScriptStep(kind: .tap, x: from.x, y: from.y))
         }
+    }
+
+    /// The word under a tap, if it can be told apart from a clock or a count.
+    private static func word(at point: CGPoint, in shot: Shot) -> String? {
+        guard let box = shot.boxes.first(where: { $0.rect.insetBy(dx: -4, dy: -4).contains(point) }) else { return nil }
+        let letters = box.label.filter { $0.isLetter }
+        guard letters.count >= 2, box.label.count <= 30 else { return nil }
+        return box.label
     }
 
     private func pickText(at point: CGPoint, shot: Shot) {
@@ -284,24 +298,25 @@ struct RecorderView: View {
         }
     }
 
-    private func perform(_ step: ScriptStep) {
+    /// Do `step` on the phone and, once it worked, add `recordAs` to the script.
+    private func perform(_ step: ScriptStep, recordAs: ScriptStep? = nil) {
         // These two go somewhere by themselves.
         let opensItself = step.kind == .openApp || step.kind == .home
-        Task { await round(step: step, switchTo: opensItself ? nil : target, record: true) }
+        Task { await round(step: step, switchTo: opensItself ? nil : target, recordAs: recordAs ?? step) }
     }
 
     private func begin() async {
         guard shot == nil else { return }
         if let last = script.steps.last(where: { $0.kind == .openApp || $0.kind == .home }) {
             target = last.kind == .home ? ScriptEngine.springboard : last.bundleId
-            await round(step: nil, switchTo: target, record: false)
+            await round(step: nil, switchTo: target, recordAs: nil)
         } else {
             showPicker = true
         }
     }
 
     /// One trip to the target app and back.
-    private func round(step: ScriptStep?, switchTo: String?, record: Bool) async {
+    private func round(step: ScriptStep?, switchTo: String?, recordAs: ScriptStep?) async {
         busy = true
         notice = nil
         defer { busy = false }
@@ -316,7 +331,7 @@ struct RecorderView: View {
                 return
             }
             let result = try await waitForResult(job)
-            apply(result, step: step, record: record)
+            apply(result, step: step, recordAs: recordAs)
         } catch {
             notice = ScriptJSON.message(error)
         }
@@ -340,7 +355,7 @@ struct RecorderView: View {
         throw RunnerClient.Failure.server("等太久了，手機沒有完成這一步。")
     }
 
-    private func apply(_ result: [String: Any], step: ScriptStep?, record: Bool) {
+    private func apply(_ result: [String: Any], step: ScriptStep?, recordAs: ScriptStep?) {
         if let encoded = result["data"] as? String, let data = Data(base64Encoded: encoded),
            let image = UIImage(data: data) {
             let width = result["point_width"] as? Double ?? Double(result["point_width"] as? Int ?? 0)
@@ -357,7 +372,7 @@ struct RecorderView: View {
             return
         }
         guard let step = step else { return }
-        if record { script.steps.append(step) }
+        if let recordAs = recordAs { script.steps.append(recordAs) }
         switch step.kind {
         case .openApp:
             target = step.bundleId

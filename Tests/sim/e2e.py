@@ -274,7 +274,7 @@ def app():
     press("完成")
     time.sleep(1)
     shot("app-9-steps")
-    for words in ("從頭打開「設定」", "點一下", "等畫面出現「About」", "點畫面上的「About」", "看到「Model Name」才做下面 1 步", "滑動"):
+    for words in ("從頭打開「設定」", "點「General」", "等畫面出現「About」", "點畫面上的「About」", "看到「Model Name」才做下面 1 步", "滑動"):
         check(f"the list says {words}", find(words, 8, APP) is not None)
 
     press("執行", exact=True)

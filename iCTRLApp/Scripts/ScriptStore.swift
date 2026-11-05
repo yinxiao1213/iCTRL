@@ -208,7 +208,9 @@ extension ScriptStep {
         case .wait: return "等 \(Self.number(duration ?? 1)) 秒"
         case .home: return "回主畫面"
         case .waitText: return "等畫面出現「\(text ?? "")」，最多 \(Self.number(timeout ?? 30)) 秒"
-        case .tapText: return "點畫面上的「\(text ?? "")」，最多等 \(Self.number(timeout ?? 30)) 秒"
+        case .tapText:
+            if x != nil { return "點「\(text ?? "")」" }
+            return "點畫面上的「\(text ?? "")」，最多等 \(Self.number(timeout ?? 30)) 秒"
         case .ifText:
             let what = negate == true ? "沒看到" : "看到"
             return "\(what)「\(text ?? "")」才做下面 \(skip ?? 1) 步"

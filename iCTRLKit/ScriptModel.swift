@@ -17,7 +17,10 @@ struct ScriptStep: Codable, Identifiable, Equatable {
         case home
         /// Wait until the text is on screen; the script fails if it never is.
         case waitText = "wait_text"
-        /// Wait until the text is on screen, then tap it.
+        /// Wait until the text is on screen, then tap it. With `x` and `y`, the
+        /// match nearest that spot wins, and the spot itself is tapped if the
+        /// text never shows: that is a tap recorded on a word, which should
+        /// follow the word when the page moves but still work if the word changes.
         case tapText = "tap_text"
         /// Run the next `skip` steps only if the text is (or with `negate`, is
         /// not) on screen.
