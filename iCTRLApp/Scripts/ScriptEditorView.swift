@@ -26,6 +26,8 @@ struct ScriptEditorView: View {
 
     var body: some View {
         List {
+            ScriptProgressSection()
+
             Section {
                 TextField("腳本名稱", text: $draft.name)
                 Toggle("一直重複，直到手動停止", isOn: Binding(

@@ -284,8 +284,8 @@ def app():
     time.sleep(1)
     shot("app-10-after-run")
     check("the replay reached the same page and scrolled it", find_text(["Available", "Capacity", "Certificate"]) is not None)
-    call("launch_app", {"bundle_id": APP})
-    time.sleep(2)
+    try_call("launch_app", {"bundle_id": APP})
+    check("back in the app, it shows how the run went", find("跑完了", 40, APP) is not None)
     shot("app-11-back")
 
 

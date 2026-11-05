@@ -20,7 +20,7 @@ struct ScriptListView: View {
         NavigationStack(path: $path) {
             List {
                 if !ready { setupSection }
-                progressSection
+                ScriptProgressSection()
                 scriptsSection
             }
             .listStyle(.insetGrouped)
@@ -85,8 +85,48 @@ struct ScriptListView: View {
         }
     }
 
-    @ViewBuilder
-    private var progressSection: some View {
+    private var scriptsSection: some View {
+        Section {
+            if store.scripts.isEmpty {
+                Text("還沒有腳本。按右上角的 + 新增一個。")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+            ForEach(store.scripts) { script in
+                HStack(spacing: 12) {
+                    NavigationLink(value: script.id) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(script.name)
+                            Text("\(script.steps.count) 步")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    Button {
+                        Task { await controller.run(script) }
+                    } label: {
+                        Image(systemName: "play.fill")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(!ready || script.steps.isEmpty || controller.progress?.isActive == true)
+                    .accessibilityLabel("執行\(script.name)")
+                }
+            }
+            .onDelete { offsets in
+                for index in offsets { store.delete(id: store.scripts[index].id) }
+            }
+        } header: {
+            Text("我的腳本")
+        }
+    }
+}
+
+/// How the current or last script is doing. Shown on both script screens,
+/// because a run can be started from either and you come back to that one.
+struct ScriptProgressSection: View {
+    @EnvironmentObject private var controller: ScriptController
+
+    var body: some View {
         if let notice = controller.notice {
             Section {
                 Label(notice, systemImage: "exclamationmark.triangle.fill")
@@ -127,41 +167,6 @@ struct ScriptListView: View {
         case "failed": return "「\(p.name)」失敗"
         case "stopped": return "「\(p.name)」已停止"
         default: return p.name
-        }
-    }
-
-    private var scriptsSection: some View {
-        Section {
-            if store.scripts.isEmpty {
-                Text("還沒有腳本。按右上角的 + 新增一個。")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-            }
-            ForEach(store.scripts) { script in
-                HStack(spacing: 12) {
-                    NavigationLink(value: script.id) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(script.name)
-                            Text("\(script.steps.count) 步")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    Button {
-                        Task { await controller.run(script) }
-                    } label: {
-                        Image(systemName: "play.fill")
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(!ready || script.steps.isEmpty || controller.progress?.isActive == true)
-                    .accessibilityLabel("執行\(script.name)")
-                }
-            }
-            .onDelete { offsets in
-                for index in offsets { store.delete(id: store.scripts[index].id) }
-            }
-        } header: {
-            Text("我的腳本")
         }
     }
 }

@@ -50,5 +50,7 @@ APP=${PIPESTATUS[0]}
 stop_runner
 
 xcrun simctl io "$UDID" screenshot "$OUT/final.png" 2>/dev/null
+# A crash that the run recovered from would otherwise go unseen.
+cp "$HOME"/Library/Logs/DiagnosticReports/iCTRL* "$OUT/" 2>/dev/null
 echo "engine=$ENGINE app=$APP"
 [ "$ENGINE" = 0 ] && [ "$APP" = 0 ]
