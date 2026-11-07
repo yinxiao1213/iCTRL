@@ -145,7 +145,7 @@ def open_in_files(mode):
     def pick(word):
         return next((i for i in items if word.lower() in i.get("label", "").lower()), None)
 
-    for word, lift in ((f"{mode}.", 75), ("On My iPhone", 0), ("Downlo", 50)):
+    for word, lift in ((f"{mode}.", 75), ("On My iPhone", 0), ("Down", 50)):
         item = pick(word)
         if item:
             try_call("tap", {"x": item["center_x"], "y": item["center_y"] - lift})
@@ -446,7 +446,7 @@ def main():
     # 換一個檔案才正常，所以先拿一個暖機檔擋掉。
     add_shortcut("warm")
     for mode in ("old", "v2"):
-        if not add_shortcut(mode):
+        if not (add_shortcut(mode) or add_shortcut(mode)):
             log("匯入失敗", mode)
             return 1
 
