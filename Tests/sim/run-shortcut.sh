@@ -33,7 +33,8 @@ TEST_RUNNER_ICTRL_ALLOW_AUTH_ONCE=1 xcodebuild test-without-building \
     > "$OUT/runner.log" 2>&1 &
 RUNNER=$!
 
-python3 Tests/sim/shortcut_e2e.py "$UDID" "$BASE" "$OUT" 2>&1 | tee "$OUT/e2e.txt"
+xcrun swiftc -O Tests/sim/ocr.swift -o build-sim/ocr || exit 1
+python3 Tests/sim/shortcut_e2e.py "$UDID" "$BASE" "$OUT" build-sim/ocr 2>&1 | tee "$OUT/e2e.txt"
 RESULT=${PIPESTATUS[0]}
 
 # 捷徑 App 的系統記錄：匯入被拒的原因只會出現在這裡。

@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """在 iOS 模擬器的捷徑 App 裡，實際匯入並執行 Threads 保存捷徑。
 
-    Tests/sim/shortcut_e2e.py UDID 捷徑網址前綴 OUT_DIR
+    Tests/sim/shortcut_e2e.py UDID 捷徑網址前綴 OUT_DIR OCR執行檔
 
 靠 runner 看畫面、按按鈕，再直接看模擬器相簿的資料夾，確認檔案真的存進去。
 捷徑怎麼把網頁變回原始 HTML 只有實際跑才知道，所以三種寫法依序試，
 第一個全部通過的寫進 OUT_DIR/winner.txt。由 Tests/sim/run-shortcut.sh 啟動。
 """
 import base64
+import json
 import os
 import subprocess
 import sys
@@ -21,7 +22,8 @@ import ictrl_rpc as rpc  # noqa: E402
 HOST = "127.0.0.1:8200"
 KEY = "ci"
 SHORTCUTS = "com.apple.shortcuts"
-UDID, BASE, OUT = sys.argv[1:4]
+UDID, BASE, OUT, OCR = sys.argv[1:5]
+SIZE = [402, 874]
 MODES = ("rename", "base64", "direct")
 
 VIDEO = ("video", "https://www.threads.com/@rottentomatoes/post/DQP4mmZD_0S?xmt=AQG0abc&slof=1", {"mp4": 1})
@@ -81,7 +83,17 @@ def open_url(url):
 
 
 def labels():
-    return (try_call("screen_text") or {}).get("items", [])
+    """畫面上所有文字和位置（單位是點），在 Mac 上辨識模擬器的截圖。"""
+    png = os.path.join(OUT, "now.png")
+    try:
+        subprocess.run(["xcrun", "simctl", "io", UDID, "screenshot", png], capture_output=True, timeout=30)
+        done = subprocess.run([OCR, png], capture_output=True, text=True, timeout=30)
+        found = json.loads(done.stdout or "[]")
+    except (subprocess.TimeoutExpired, ValueError) as e:
+        log("  ( 辨識失敗:", str(e)[:120], ")")
+        return []
+    return [{"label": i["label"], "center_x": round(i["cx"] * SIZE[0]), "center_y": round(i["cy"] * SIZE[1])}
+            for i in found]
 
 
 def answer():
@@ -166,13 +178,12 @@ def warm_up():
     Safari 只顯示起始頁，捷徑只顯示列表。第一次開還有新功能介紹要關掉。
     """
     try_call("launch_app", {"bundle_id": "com.apple.mobilesafari"})
-    time.sleep(6)
+    time.sleep(5)
     try_call("launch_app", {"bundle_id": SHORTCUTS})
-    for _ in range(8):
+    for _ in range(5):
         time.sleep(2)
-        if answer() is None:
-            break
-    shot("warm-" + str(int(time.time())))
+        answer()
+    shot("warm")
     try_call("home")
     time.sleep(1)
 
@@ -251,17 +262,21 @@ def run_case(mode, case):
     log("執行", mode, name)
     open_url("shortcuts://run-shortcut?name=" + urllib.parse.quote(f"ts-{mode}") + "&input=text&text="
              + urllib.parse.quote(link, safe=""))
-    end = time.time() + 70
+    end = time.time() + 100
     settled = 0
     round_no = 0
     while time.time() < end:
-        time.sleep(2)
+        time.sleep(1.5)
         round_no += 1
+        seen = labels()
+        ask = " ".join(i.get("label", "") for i in seen[:5])
+        if "Allow" in ask or "allow" in ask:
+            log("  詢問:", ask[:120])
         pressed = answer()
         new = set(album()) - set(before)
         if round_no == 3 or round_no % 8 == 0:
             shot(f"run-{mode}-{name}-{round_no}")
-            log("  畫面:", [i.get("label") for i in labels()][:12], "新檔案", len(new))
+            log("  畫面:", [i.get("label") for i in seen][:12], "新檔案", len(new))
         settled = settled + 1 if (len(new) >= total and pressed is None) else 0
         # 沒有預期檔案的情況要多等一下，確認真的沒有多存。
         if settled >= (8 if total == 0 else 3):
@@ -287,7 +302,9 @@ def main():
     time.sleep(3)
     answer()
     info = try_call("device_info") or {}
-    log("裝置", info.get("model"), info.get("system_version"))
+    log("裝置", info.get("model"), info.get("system_version"), info.get("point_width"), info.get("point_height"))
+    if info.get("point_width") and info.get("point_height"):
+        SIZE[:] = [info["point_width"], info["point_height"]]
 
     for mode in MODES:
         if not add_shortcut(mode):
