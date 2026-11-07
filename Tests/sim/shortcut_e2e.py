@@ -30,8 +30,9 @@ REPLY = ("reply", "https://www.threads.com/@pamplemousse_and_circumstances/post/
 PHOTOS = ("photos-only", "https://www.threads.com/@gif_names_finding/post/DU6V-sPExs6", {})
 
 # 畫面上出現就按。順序就是優先序；「Allow」要完全相符，才不會按到 Don't Allow。
+# OK 排在 Continue 前面：警告視窗蓋住畫面時，後面的 Continue 按不到。
 ANSWERS = ("Always Allow", "Allow Full Access", "Allow Access", "Allow", "Allow Once", "Add Shortcut",
-           "Continue", "Get Started", "Not Now", "OK", "Done")
+           "OK", "Continue", "Get Started", "Not Now", "Done")
 
 
 def log(*parts):
@@ -112,21 +113,70 @@ def kind(path):
     return "other:" + os.path.basename(path)
 
 
+def tap_label(words, exact=False):
+    """按畫面上第一個符合的文字，回傳按到的字。words 的順序就是優先序。"""
+    items = labels()
+    for word in words:
+        for item in items:
+            label = item.get("label", "").strip()
+            if (label.lower() == word.lower()) if exact else (word.lower() in label.lower()):
+                if try_call("tap", {"x": item["center_x"], "y": item["center_y"]}) is not None:
+                    log("  按了", label)
+                    return word
+    return None
+
+
+def first_launch():
+    """捷徑 App 第一次開會有新功能介紹，先關掉。"""
+    try_call("launch_app", {"bundle_id": SHORTCUTS})
+    for _ in range(8):
+        time.sleep(2)
+        if answer() is None:
+            break
+    shot("shortcuts-ready")
+    subprocess.run(["xcrun", "simctl", "terminate", UDID, SHORTCUTS], capture_output=True, timeout=30)
+
+
 def add_shortcut(mode):
-    """回傳是否按到了 Add Shortcut。"""
+    """走使用者會走的路：Safari 下載 → 檔案 App 點開 → Add Shortcut。"""
     log("匯入", mode)
-    name = f"TS {mode}"
-    url = f"{BASE}/ts-{mode}.shortcut"
-    open_url("shortcuts://import-shortcut?url=" + urllib.parse.quote(url, safe="") + "&name=" + urllib.parse.quote(name))
-    end = time.time() + 75
-    added = False
+    name = f"ts-{mode}"
+    open_url(f"{BASE}/{name}.shortcut")
+    end = time.time() + 40
     round_no = 0
     while time.time() < end:
         time.sleep(2)
         round_no += 1
         if round_no % 5 == 1:
+            shot(f"safari-{mode}-{round_no}")
+            log("  Safari:", [i.get("label") for i in labels()][:14])
+        if tap_label(["Download"], exact=True):
+            break
+    time.sleep(5)
+    shot(f"safari-{mode}-done")
+    subprocess.run(["xcrun", "simctl", "terminate", UDID, "com.apple.DocumentsApp"], capture_output=True, timeout=30)
+    try_call("launch_app", {"bundle_id": "com.apple.DocumentsApp"})
+    end = time.time() + 60
+    round_no = 0
+    opened = False
+    while time.time() < end and not opened:
+        time.sleep(2)
+        round_no += 1
+        if round_no % 4 == 1:
+            shot(f"files-{mode}-{round_no}")
+            log("  檔案:", [i.get("label") for i in labels()][:14])
+        pressed = tap_label([name, "Downloads", "On My iPhone", "Browse"])
+        opened = pressed == name
+    log("  點開了檔案" if opened else "  檔案 App 裡找不到捷徑檔")
+    end = time.time() + 40
+    added = False
+    round_no = 0
+    while time.time() < end:
+        time.sleep(2)
+        round_no += 1
+        if round_no % 4 == 1:
             shot(f"import-{mode}-{round_no}")
-            log("  畫面:", [i.get("label") for i in labels()][:16])
+            log("  匯入畫面:", [i.get("label") for i in labels()][:14])
         pressed = answer()
         added = added or pressed == "Add Shortcut"
         if added and pressed is None:
@@ -141,7 +191,7 @@ def run_case(mode, case):
     before = album()
     total = sum(expected.values())
     log("執行", mode, name)
-    open_url("shortcuts://run-shortcut?name=" + urllib.parse.quote(f"TS {mode}") + "&input=text&text="
+    open_url("shortcuts://run-shortcut?name=" + urllib.parse.quote(f"ts-{mode}") + "&input=text&text="
              + urllib.parse.quote(link, safe=""))
     end = time.time() + 70
     settled = 0
@@ -180,6 +230,7 @@ def main():
     answer()
     info = try_call("device_info") or {}
     log("裝置", info.get("model"), info.get("system_version"))
+    first_launch()
 
     for mode in MODES:
         if not add_shortcut(mode):
