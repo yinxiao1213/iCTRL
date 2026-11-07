@@ -22,9 +22,9 @@ HOST = "127.0.0.1:8200"
 KEY = "ci"
 SHORTCUTS = "com.apple.shortcuts"
 UDID, BASE, OUT = sys.argv[1:4]
-# rename 和 base64 實測都能用，rename 動作較少，當正式版。第一次開捷徑 App 時
-# 匯入畫面可能被新功能介紹吃掉，所以排兩次。
-MODES = ("rename", "rename", "base64", "direct")
+# base64 是正式版：四項加分享選單都實測通過。rename 四項也過，但沒測過分享選單。
+# 第一次開捷徑 App 時匯入畫面可能被新功能介紹吃掉，所以排兩次。
+MODES = ("base64", "base64", "rename", "direct")
 
 VIDEO = ("video", "https://www.threads.com/@rottentomatoes/post/DQP4mmZD_0S?xmt=AQG0abc&slof=1", {"mp4": 1})
 GIF = ("gif", "https://www.threads.com/@giphy/post/DFmKJ4zMWMv", {"gif": 1})

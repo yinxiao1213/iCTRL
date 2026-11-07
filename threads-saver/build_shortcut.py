@@ -7,7 +7,7 @@
 逐一下載存進相簿。全部在手機上跑，不經過任何伺服器。
 
 --html-mode 決定怎麼把嵌入頁變回原始 HTML：捷徑預設會把網頁當成排版文字，
-<source> 這類標籤會不見。模擬器測試會三種都試，正式版用測出來能用的那種。
+<source> 這類標籤會不見。正式版用 base64，rename 也實測可用，direct 只是對照組。
 """
 import argparse
 import plistlib
@@ -115,7 +115,7 @@ def html_actions(mode, page):
     return steps, output("html", "Text")
 
 
-def build(html_mode="rename"):
+def build(html_mode="base64"):
     codes = output("codes", "Matches")
     code = output("code", "Item from List")
     page = output("page", "Contents of URL")
@@ -188,7 +188,7 @@ def build(html_mode="rename"):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("out")
-    parser.add_argument("--html-mode", choices=("rename", "base64", "direct"), default="rename")
+    parser.add_argument("--html-mode", choices=("rename", "base64", "direct"), default="base64")
     args = parser.parse_args()
     with open(args.out, "wb") as f:
         plistlib.dump(build(args.html_mode), f, fmt=plistlib.FMT_BINARY)
