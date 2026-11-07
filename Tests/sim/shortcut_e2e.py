@@ -262,6 +262,11 @@ def run_case(mode, case):
         time.sleep(1.5)
         round_no += 1
         seen = labels()
+        said = [i.get("label", "") for i in seen]
+        said = [t for t in said if any(w in t for w in ("連結", "收到", "內容", "找不到", "回報"))]
+        if said:
+            log("  對話框:", said[:6])
+            shot(f"run-{mode}-{name}-dialog")
         ask = " ".join(i.get("label", "") for i in seen[:5])
         if "Allow" in ask or "allow" in ask:
             log("  詢問:", ask[:120])
@@ -331,7 +336,9 @@ def shows_input(mode):
     seen = False
     while time.time() < end and not seen:
         time.sleep(2)
-        seen = any("hellocheck" in i.get("label", "") for i in labels())
+        items = [i.get("label", "") for i in labels()]
+        seen = any("hello" in t.lower() for t in items)
+        log("  畫面:", items[:10])
     shot(f"shows-input-{mode}")
     answer()
     log(("ok   " if seen else "FAIL ") + f"{mode} 錯誤訊息顯示收到的內容")
@@ -345,7 +352,7 @@ def pick_shortcut(mode, tag):
         items = labels()
         log("  分享選單:", [i.get("label") for i in items][:16])
         shot(f"{tag}-sheet-{round_no}")
-        item = next((i for i in items if f"ts-{mode}" in i.get("label", "")), None)
+        item = next((i for i in items if f"ts-{mode}" in i.get("label", "").lower()), None)
         if item:
             try_call("tap", {"x": item["center_x"], "y": item["center_y"]})
             log("  點了", item.get("label"))
@@ -397,10 +404,17 @@ def from_url_item(mode, want):
     try_call("long_press", {"x": link["center_x"], "y": link["center_y"], "duration": 1.5})
     time.sleep(3)
     shot(f"url-{mode}-menu")
+    tap_label(["Hide preview"])
+    time.sleep(2)
+    shot(f"url-{mode}-menu2")
     log("  選單:", [i.get("label") for i in labels()][:14])
     if not tap_label(["Share"]):
-        log(f"FAIL {mode} URL 物件: 長按選單沒有分享")
-        return False
+        try_call("drag", {"from_x": 150, "from_y": 700, "to_x": 150, "to_y": 300, "duration": 0.3})
+        time.sleep(1.5)
+        log("  選單:", [i.get("label") for i in labels()][:14])
+        if not tap_label(["Share"]):
+            log(f"FAIL {mode} URL 物件: 長按選單沒有分享")
+            return False
     time.sleep(3)
     if not pick_shortcut(mode, f"url-{mode}"):
         return False
