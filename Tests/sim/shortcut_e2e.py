@@ -126,25 +126,33 @@ def tap_label(words, exact=False):
     return None
 
 
-def open_in_files(name):
-    """往下載資料夾走一步，點開捷徑檔時回傳 True。
+def open_in_files(mode):
+    """往下載資料夾走一步，點開捷徑檔時回傳 True，什麼都沒做時回傳 None。
 
-    圖示模式下點到名稱會變成重新命名，所以點名稱上方的圖示。
+    圖示模式下點到名稱會變成重新命名，所以點名稱上方的圖示。OCR 會把檔名斷成
+    兩行（ts- / rename.shortcut），也常把 Downloads 讀錯，所以只比對可靠的部分。
     畫面最上方的標題和本文同名，要排除。
     """
-    items = [i for i in labels() if i.get("center_y", 0) > 150]
+    items = [i for i in labels() if i.get("center_y", 0) > 150 and "empty" not in i.get("label", "").lower()]
 
     def pick(word):
         return next((i for i in items if word.lower() in i.get("label", "").lower()), None)
 
-    for word, lift in ((name, 50), ("On My iPhone", 0), ("Downloads", 50)):
+    for word, lift in ((f"{mode}.shortcut", 75), ("On My iPhone", 0), ("Downlo", 50)):
         item = pick(word)
         if item:
             try_call("tap", {"x": item["center_x"], "y": item["center_y"] - lift})
             log("  點了", item.get("label"))
-            return word == name
-    tap_label(["Browse"], exact=True)
-    return False
+            return word.endswith(".shortcut")
+    return None
+
+
+def downloaded(name):
+    root = os.path.expanduser(f"~/Library/Developer/CoreSimulator/Devices/{UDID}/data")
+    for folder, _, names in os.walk(root):
+        if name in names:
+            return os.path.join(folder, name)
+    return None
 
 
 def first_launch():
@@ -163,30 +171,46 @@ def add_shortcut(mode):
     log("匯入", mode)
     name = f"ts-{mode}"
     open_url(f"{BASE}/{name}.shortcut")
-    end = time.time() + 40
+    end = time.time() + 100
     round_no = 0
-    while time.time() < end:
+    path = None
+    while time.time() < end and not path:
         time.sleep(2)
         round_no += 1
-        if round_no % 5 == 1:
+        items = labels()
+        if round_no % 6 == 1:
             shot(f"safari-{mode}-{round_no}")
-            log("  Safari:", [i.get("label") for i in labels()][:14])
-        if tap_label(["Download"], exact=True):
-            break
-    time.sleep(5)
-    shot(f"safari-{mode}-done")
+            log("  Safari:", [i.get("label") for i in items][:10])
+        for item in items:
+            # 提示句裡的 download 是小寫，按鈕才是大寫開頭。
+            if item.get("label", "").strip().startswith("Downlo"):
+                try_call("tap", {"x": item["center_x"], "y": item["center_y"]})
+                log("  按了", item.get("label"))
+                break
+        path = downloaded(f"{name}.shortcut")
+    log("  下載到", path)
+    if not path:
+        return False
     subprocess.run(["xcrun", "simctl", "terminate", UDID, "com.apple.DocumentsApp"], capture_output=True, timeout=30)
     try_call("launch_app", {"bundle_id": "com.apple.DocumentsApp"})
-    end = time.time() + 60
+    time.sleep(3)
+    tap_label(["Browse"], exact=True)
+    end = time.time() + 70
     round_no = 0
+    idle = 0
     opened = False
     while time.time() < end and not opened:
         time.sleep(2)
         round_no += 1
-        if round_no % 4 == 1:
+        if round_no % 5 == 1:
             shot(f"files-{mode}-{round_no}")
-            log("  檔案:", [i.get("label") for i in labels()][:14])
-        opened = open_in_files(name)
+            log("  檔案:", [i.get("label") for i in labels()][:12])
+        step = open_in_files(mode)
+        opened = step is True
+        idle = idle + 1 if step is None else 0
+        if idle >= 5:
+            tap_label(["Browse"], exact=True)
+            idle = 0
     log("  點開了檔案" if opened else "  檔案 App 裡找不到捷徑檔")
     end = time.time() + 40
     added = False
