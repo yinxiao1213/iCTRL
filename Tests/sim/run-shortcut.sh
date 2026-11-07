@@ -36,6 +36,9 @@ RUNNER=$!
 python3 Tests/sim/shortcut_e2e.py "$UDID" "$BASE" "$OUT" 2>&1 | tee "$OUT/e2e.txt"
 RESULT=${PIPESTATUS[0]}
 
+# 捷徑 App 的系統記錄：匯入被拒的原因只會出現在這裡。
+xcrun simctl spawn "$UDID" log show --last 25m --style compact     --predicate 'process == "Shortcuts" OR process == "siriactionsd" OR subsystem BEGINSWITH "com.apple.shortcuts"'     2>/dev/null | tail -c 3000000 > "$OUT/shortcuts-log.txt"
+
 kill "$RUNNER" 2>/dev/null
 wait "$RUNNER" 2>/dev/null
 xcrun simctl io "$UDID" screenshot "$OUT/final.png" 2>/dev/null

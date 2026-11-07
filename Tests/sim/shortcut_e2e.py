@@ -138,12 +138,12 @@ def open_in_files(mode):
     def pick(word):
         return next((i for i in items if word.lower() in i.get("label", "").lower()), None)
 
-    for word, lift in ((f"{mode}.shortcut", 75), ("On My iPhone", 0), ("Downlo", 50)):
+    for word, lift in ((f"{mode}.", 75), ("On My iPhone", 0), ("Downlo", 50)):
         item = pick(word)
         if item:
             try_call("tap", {"x": item["center_x"], "y": item["center_y"] - lift})
             log("  點了", item.get("label"))
-            return word.endswith(".shortcut")
+            return word.endswith(".")
     return None
 
 
@@ -155,20 +155,28 @@ def downloaded(name):
     return None
 
 
-def first_launch():
-    """捷徑 App 第一次開會有新功能介紹，先關掉。"""
+def warm_up():
+    """先開過 Safari 和捷徑並留在背景。
+
+    模擬器上兩個 App 冷啟動時都會把剛收到的網址或檔案弄丟，
+    Safari 只顯示起始頁，捷徑只顯示列表。第一次開還有新功能介紹要關掉。
+    """
+    try_call("launch_app", {"bundle_id": "com.apple.mobilesafari"})
+    time.sleep(6)
     try_call("launch_app", {"bundle_id": SHORTCUTS})
     for _ in range(8):
         time.sleep(2)
         if answer() is None:
             break
-    shot("shortcuts-ready")
-    subprocess.run(["xcrun", "simctl", "terminate", UDID, SHORTCUTS], capture_output=True, timeout=30)
+    shot("warm-" + str(int(time.time())))
+    try_call("home")
+    time.sleep(1)
 
 
 def add_shortcut(mode):
     """走使用者會走的路：Safari 下載 → 檔案 App 點開 → Add Shortcut。"""
     log("匯入", mode)
+    warm_up()
     name = f"ts-{mode}"
     open_url(f"{BASE}/{name}.shortcut")
     end = time.time() + 100
@@ -218,7 +226,7 @@ def add_shortcut(mode):
     while time.time() < end:
         time.sleep(2)
         round_no += 1
-        if round_no % 4 == 1:
+        if round_no % 3 == 1:
             shot(f"import-{mode}-{round_no}")
             log("  匯入畫面:", [i.get("label") for i in labels()][:14])
         pressed = answer()
@@ -259,7 +267,7 @@ def run_case(mode, case):
     ok = got == expected
     log(("ok   " if ok else "FAIL ") + f"{mode} {name}: 預期 {expected}，實際 {got}",
         [album()[p] // 1024 for p in new], "KB")
-    subprocess.run(["xcrun", "simctl", "terminate", UDID, SHORTCUTS], capture_output=True, timeout=30)
+    try_call("home")
     time.sleep(2)
     return ok
 
@@ -274,13 +282,10 @@ def main():
     answer()
     info = try_call("device_info") or {}
     log("裝置", info.get("model"), info.get("system_version"))
-    first_launch()
 
     for mode in MODES:
         if not add_shortcut(mode):
             continue
-        subprocess.run(["xcrun", "simctl", "terminate", UDID, SHORTCUTS], capture_output=True, timeout=30)
-        time.sleep(2)
         if all([run_case(mode, VIDEO), run_case(mode, GIF)]):
             rest = [run_case(mode, REPLY), run_case(mode, PHOTOS)]
             log(f"{mode} 基本兩項通過，回覆與純照片 {sum(rest)} / {len(rest)}")
