@@ -22,9 +22,9 @@ HOST = "127.0.0.1:8200"
 KEY = "ci"
 SHORTCUTS = "com.apple.shortcuts"
 UDID, BASE, OUT = sys.argv[1:4]
-# base64 是實測能用的寫法，另外兩種留著備用。第一次開捷徑 App 時匯入畫面會被
-# 新功能介紹吃掉，所以 base64 排兩次。
-MODES = ("base64", "base64", "rename", "direct")
+# rename 和 base64 實測都能用，rename 動作較少，當正式版。第一次開捷徑 App 時
+# 匯入畫面可能被新功能介紹吃掉，所以排兩次。
+MODES = ("rename", "rename", "base64", "direct")
 
 VIDEO = ("video", "https://www.threads.com/@rottentomatoes/post/DQP4mmZD_0S?xmt=AQG0abc&slof=1", {"mp4": 1})
 GIF = ("gif", "https://www.threads.com/@giphy/post/DFmKJ4zMWMv", {"gif": 1})
@@ -192,6 +192,8 @@ def add_shortcut(mode):
     while time.time() < end and not path:
         time.sleep(2)
         round_no += 1
+        if round_no % 8 == 0:
+            open_url(f"{BASE}/{name}.shortcut")
         items = labels()
         if round_no % 6 == 1:
             shot(f"safari-{mode}-{round_no}")
@@ -304,9 +306,14 @@ def from_clipboard(mode):
     log("剪貼簿", mode)
     link = "https://www.threads.com/@orbismala/post/DeCQmv0Ehbi"
     subprocess.run(["xcrun", "simctl", "pbcopy", UDID], input=link, text=True, capture_output=True, timeout=30)
+    pasted = subprocess.run(["xcrun", "simctl", "pbpaste", UDID], capture_output=True, text=True, timeout=30)
+    log("  模擬器剪貼簿:", pasted.stdout[:80])
     before = album()
-    open_url("shortcuts://run-shortcut?name=" + urllib.parse.quote(f"ts-{mode}"))
-    got = wait_album(before, 1)
+    try_call("launch_app", {"bundle_id": SHORTCUTS})
+    time.sleep(3)
+    shot("clipboard-start")
+    tap_label([f"ts-{mode}"])
+    got = wait_album(before, 1, 45)
     shot("clipboard-end")
     log(("ok   " if got == {"mp4": 1} else "FAIL ") + f"剪貼簿: 實際 {got}")
     try_call("home")
@@ -332,8 +339,8 @@ def from_share_sheet(mode):
             shot("share-menu")
             log("  選單:", [i.get("label") for i in labels()][:14])
             if word != "Share":
-                tap_label(["Share"], exact=True)
-                time.sleep(2.5)
+                tap_label(["Share"])
+                time.sleep(3)
             break
     for round_no in range(7):
         items = labels()
