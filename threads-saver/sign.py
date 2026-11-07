@@ -5,7 +5,7 @@
 
 macOS 的 shortcuts sign 要登入 iCloud，雲端 Mac 用不了，所以改用 RoutineHub 的
 公開簽章服務 HubSign。送出去的只有捷徑本身的動作，沒有任何個人資料。
-要在一般電腦上跑：HubSign 會拒絕雲端機房送來的請求（403）。
+要在一般電腦上跑：從 GitHub Actions 送出時 HubSign 回 403，從這台電腦用 curl 就正常。
 
 簽章憑證有效期約一年，過期前重跑一次再推上去就好。已加入手機的捷徑不受影響。
 """

@@ -22,7 +22,9 @@ HOST = "127.0.0.1:8200"
 KEY = "ci"
 SHORTCUTS = "com.apple.shortcuts"
 UDID, BASE, OUT = sys.argv[1:4]
-MODES = ("rename", "base64", "direct")
+# base64 是實測能用的寫法，另外兩種留著備用。第一次開捷徑 App 時匯入畫面會被
+# 新功能介紹吃掉，所以 base64 排兩次。
+MODES = ("base64", "base64", "rename", "direct")
 
 VIDEO = ("video", "https://www.threads.com/@rottentomatoes/post/DQP4mmZD_0S?xmt=AQG0abc&slof=1", {"mp4": 1})
 GIF = ("gif", "https://www.threads.com/@giphy/post/DFmKJ4zMWMv", {"gif": 1})
@@ -31,7 +33,7 @@ PHOTOS = ("photos-only", "https://www.threads.com/@gif_names_finding/post/DU6V-s
 
 # 畫面上出現就按。順序就是優先序；「Allow」要完全相符，才不會按到 Don't Allow。
 # OK 排在 Continue 前面：警告視窗蓋住畫面時，後面的 Continue 按不到。
-ANSWERS = ("Always Allow", "Allow Full Access", "Allow Access", "Allow", "Allow Once", "Add Shortcut",
+ANSWERS = ("Always Allow", "Allow Full Access", "Allow Access", "Allow Paste", "Allow", "Allow Once", "Add Shortcut",
            "OK", "Continue", "Get Started", "Not Now", "Done")
 
 
@@ -283,6 +285,75 @@ def run_case(mode, case):
     return ok
 
 
+def wait_album(before, want, limit=100):
+    """一邊回答詢問一邊等，回傳新檔案的種類統計。"""
+    end = time.time() + limit
+    settled = 0
+    while time.time() < end:
+        time.sleep(1.5)
+        pressed = answer()
+        settled = settled + 1 if (len(set(album()) - set(before)) >= want and pressed is None) else 0
+        if settled >= 3:
+            break
+    kinds = [kind(p) for p in sorted(set(album()) - set(before))]
+    return {k: kinds.count(k) for k in set(kinds)}
+
+
+def from_clipboard(mode):
+    """從主畫面按捷徑的情況：沒有輸入，改讀剪貼簿。"""
+    log("剪貼簿", mode)
+    link = "https://www.threads.com/@orbismala/post/DeCQmv0Ehbi"
+    subprocess.run(["xcrun", "simctl", "pbcopy", UDID], input=link, text=True, capture_output=True, timeout=30)
+    before = album()
+    open_url("shortcuts://run-shortcut?name=" + urllib.parse.quote(f"ts-{mode}"))
+    got = wait_album(before, 1)
+    shot("clipboard-end")
+    log(("ok   " if got == {"mp4": 1} else "FAIL ") + f"剪貼簿: 實際 {got}")
+    try_call("home")
+
+
+def from_share_sheet(mode):
+    """實際使用的路：開貼文 → 分享 → 選捷徑。輸入是網頁而不是文字，跑在分享擴充功能裡。"""
+    log("分享選單", mode)
+    before = album()
+    open_url("https://www.threads.com/@senwhitehouse/post/DOy2H84DpZ0")
+    time.sleep(12)
+    shot("share-page")
+    source = (try_call("page_source") or {})
+    lines = [line.strip()[:90] for line in str(source.get("source") or source.get("body") or source).split("\n")
+             if "Button" in line]
+    log("  按鈕:", lines[:24])
+    for word in ("Page Menu", "More", "Share"):
+        found = try_call("find_element", {"element_id": word, "bundle_id": "com.apple.mobilesafari", "match": "contains"})
+        log("  找", word, bool(found and found.get("ref")))
+        if found and found.get("ref"):
+            try_call("tap", {"ref": found["ref"]})
+            time.sleep(2.5)
+            shot("share-menu")
+            log("  選單:", [i.get("label") for i in labels()][:14])
+            if word != "Share":
+                tap_label(["Share"], exact=True)
+                time.sleep(2.5)
+            break
+    for round_no in range(7):
+        items = labels()
+        log("  分享選單:", [i.get("label") for i in items][:16])
+        shot(f"share-sheet-{round_no}")
+        item = next((i for i in items if f"ts-{mode}" in i.get("label", "")), None)
+        if item:
+            try_call("tap", {"x": item["center_x"], "y": item["center_y"]})
+            log("  點了", item.get("label"))
+            break
+        try_call("drag", {"from_x": 200, "from_y": 720, "to_x": 200, "to_y": 330, "duration": 0.3})
+        time.sleep(1.5)
+    else:
+        log("FAIL 分享選單: 找不到捷徑")
+        return
+    got = wait_album(before, 1)
+    shot("share-end")
+    log(("ok   " if got == {"mp4": 1} else "FAIL ") + f"分享選單: 實際 {got}")
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     if not wait_server():
@@ -304,6 +375,12 @@ def main():
                 with open(os.path.join(OUT, "winner.txt"), "w") as f:
                     f.write(mode)
                 log("採用", mode)
+                # 這兩項只回報結果：失敗也不影響已驗證的檔案，但要看得到。
+                for extra in (from_clipboard, from_share_sheet):
+                    try:
+                        extra(mode)
+                    except Exception as e:  # noqa: BLE001
+                        log("FAIL", extra.__name__, repr(e)[:200])
                 return 0
     log("沒有一種寫法全部通過")
     return 1
