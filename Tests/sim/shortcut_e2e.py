@@ -126,6 +126,27 @@ def tap_label(words, exact=False):
     return None
 
 
+def open_in_files(name):
+    """往下載資料夾走一步，點開捷徑檔時回傳 True。
+
+    圖示模式下點到名稱會變成重新命名，所以點名稱上方的圖示。
+    畫面最上方的標題和本文同名，要排除。
+    """
+    items = [i for i in labels() if i.get("center_y", 0) > 150]
+
+    def pick(word):
+        return next((i for i in items if word.lower() in i.get("label", "").lower()), None)
+
+    for word, lift in ((name, 50), ("On My iPhone", 0), ("Downloads", 50)):
+        item = pick(word)
+        if item:
+            try_call("tap", {"x": item["center_x"], "y": item["center_y"] - lift})
+            log("  點了", item.get("label"))
+            return word == name
+    tap_label(["Browse"], exact=True)
+    return False
+
+
 def first_launch():
     """捷徑 App 第一次開會有新功能介紹，先關掉。"""
     try_call("launch_app", {"bundle_id": SHORTCUTS})
@@ -165,8 +186,7 @@ def add_shortcut(mode):
         if round_no % 4 == 1:
             shot(f"files-{mode}-{round_no}")
             log("  檔案:", [i.get("label") for i in labels()][:14])
-        pressed = tap_label([name, "Downloads", "On My iPhone", "Browse"])
-        opened = pressed == name
+        opened = open_in_files(name)
     log("  點開了檔案" if opened else "  檔案 App 裡找不到捷徑檔")
     end = time.time() + 40
     added = False
