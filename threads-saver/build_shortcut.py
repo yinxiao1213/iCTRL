@@ -32,11 +32,6 @@ MEDIA_RE = (
 OBJ = "\ufffc"
 NS = uuid.UUID("6f1f3a52-3c55-4a54-9d0e-7b6f7c1e0a11")
 INPUT = {"Type": "ExtensionInput"}
-# 分享進來的可能是 URL 物件，明確轉成文字。
-INPUT_TEXT = {
-    "Type": "ExtensionInput",
-    "Aggrandizements": [{"Type": "WFCoercionVariableAggrandizement", "CoercionItemClass": "WFStringContentItem"}],
-}
 CODES = {"Type": "Variable", "VariableName": "postCodes"}
 REPEAT_ITEM = {"Type": "Variable", "VariableName": "Repeat Item"}
 
@@ -141,9 +136,11 @@ def find_code():
     clip_codes = output("clip-codes", "Matches")
     html_steps, html = read_html("link", link_page)
     return [
-        # 文字轉換和取出網址兩條路都走，放在一起比對，哪一條拿到都算。
+        # 輸入本身和取出的網址放在一起比對，哪一條拿到都算。
+        # 不要對輸入加「轉成文字」：Safari 網頁物件會真的去載入網頁，被隱私設定擋下
+        # （WFWKWebViewCapturerErrorDomain 1002），捷徑就直接中止了。
         action("detect.link", "detected", WFInput=text(INPUT)),
-        action("gettext", "received", WFTextActionText=text(INPUT_TEXT, "\n", detected)),
+        action("gettext", "received", WFTextActionText=text(INPUT, "\n", detected)),
         action("text.match", "codes", text=text(received), WFMatchTextPattern=CODE_RE,
                WFMatchTextCaseSensitive=False),
         remember(codes),

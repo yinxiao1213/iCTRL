@@ -4,7 +4,7 @@
     Tests/sim/shortcut_e2e.py UDID 捷徑網址前綴 OUT_DIR
 
 靠 runner 看畫面、按按鈕，再直接看模擬器相簿的資料夾，確認檔案真的存進去。
-ts-v3 的必要項目全部通過才寫進 OUT_DIR/winner.txt。由 Tests/sim/run-shortcut.sh 啟動。
+ts-v4 的必要項目全部通過才寫進 OUT_DIR/winner.txt。由 Tests/sim/run-shortcut.sh 啟動。
 """
 import base64
 import os
@@ -444,28 +444,28 @@ def main():
     # 模擬器開機後第一個匯入的檔案不會跳出加入畫面，重試同一個檔案也一樣，
     # 換一個檔案才正常，所以先拿一個暖機檔擋掉。
     add_shortcut("warm")
-    if not (add_shortcut("v3") or add_shortcut("v3")):
-        log("匯入失敗 v3")
+    if not (add_shortcut("v4") or add_shortcut("v4")):
+        log("匯入失敗 v4")
         return 1
 
     required = [
-        guarded(run_case, "v3", SHORT),
-        guarded(run_case, "v3", VIDEO),
-        guarded(run_case, "v3", GIF),
-        guarded(run_case, "v3", REPLY),
-        guarded(run_case, "v3", PHOTOS),
-        guarded(run_case, "v3", ENCODED),
-        guarded(from_share_sheet, "v3"),
+        guarded(run_case, "v4", SHORT),
+        guarded(run_case, "v4", VIDEO),
+        guarded(run_case, "v4", GIF),
+        guarded(run_case, "v4", REPLY),
+        guarded(run_case, "v4", PHOTOS),
+        guarded(run_case, "v4", ENCODED),
+        guarded(from_share_sheet, "v4"),
     ]
     extras = [
-        guarded(shows_input, "v3"),
-        guarded(from_clipboard, "v3"),
-        guarded(from_url_item, "v3", {"mp4": 1}),
+        guarded(shows_input, "v4"),
+        guarded(from_clipboard, "v4"),
+        guarded(from_url_item, "v4", {"mp4": 1}),
     ]
-    log(f"v3 必要項目 {sum(required)} / {len(required)}，其他 {sum(extras)} / {len(extras)}")
+    log(f"v4 必要項目 {sum(required)} / {len(required)}，其他 {sum(extras)} / {len(extras)}")
     if all(required):
         with open(os.path.join(OUT, "winner.txt"), "w") as f:
-            f.write("v3")
+            f.write("v4")
         return 0
     return 1
 

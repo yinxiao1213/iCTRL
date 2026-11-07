@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""產生捷徑並簽章，放進 signed/ts-v3.shortcut。iOS 只接受簽過章的捷徑檔。
+"""產生捷徑並簽章，放進 signed/ts-v4.shortcut。iOS 只接受簽過章的捷徑檔。
 
     sign.py
 
@@ -8,6 +8,9 @@ macOS 的 shortcuts sign 要登入 iCloud，雲端 Mac 用不了，所以改用 
 要在一般電腦上跑：從 GitHub Actions 送出時 HubSign 回 403，從這台電腦用 curl 就正常。
 
 簽章憑證有效期約一年，過期前重跑一次再推上去就好。已加入手機的捷徑不受影響。
+
+捷徑匯入後的名稱就是檔名。實測通過後才把這個檔複製成 signed/Threads下載.shortcut，
+那個才是給使用者裝的，沒測過的版本不要蓋過去。
 """
 import json
 import os
@@ -25,7 +28,7 @@ SIGNED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "signed")
 
 def sign():
     xml = plistlib.dumps(build(), fmt=plistlib.FMT_XML).decode()
-    dest = os.path.join(SIGNED, "ts-v3.shortcut")
+    dest = os.path.join(SIGNED, "ts-v4.shortcut")
     with tempfile.TemporaryDirectory() as folder:
         payload = os.path.join(folder, "payload.json")
         with open(payload, "w", encoding="utf8") as f:
@@ -40,10 +43,8 @@ def sign():
     if done.stdout != "200" or data[:4] != b"AEA1":
         print(f"簽章失敗: HTTP {done.stdout} {done.stderr.strip()} {data[:120]!r}")
         return False
-    # 捷徑匯入後的名稱就是檔名：ts-v3 給實測用，Threads下載 給使用者裝。
-    for path in (dest, os.path.join(SIGNED, "Threads下載.shortcut")):
-        with open(path, "wb") as f:
-            f.write(data)
+    with open(dest, "wb") as f:
+        f.write(data)
     print(f"簽章完成: {len(data)} bytes")
     return True
 
