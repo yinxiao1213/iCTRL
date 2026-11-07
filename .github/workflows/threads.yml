@@ -57,7 +57,7 @@ jobs:
             2>&1 | tee sim-build.log
 
       - name: Run in the Shortcuts app
-        timeout-minutes: 25
+        timeout-minutes: 40
         run: bash Tests/sim/run-shortcut.sh "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/threads-saver/signed" sim-out
 
       - name: Publish result

@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """產生「Threads 保存」捷徑（未簽章的 plist）。
 
-    build_shortcut.py 輸出檔 [--html-mode rename|base64|direct]
+    build_shortcut.py 輸出檔
 
 流程：取得貼文代碼 → 讀官方 /embed 嵌入頁 → 切掉回覆上層 → 找影片和 GIF →
 逐一下載存進相簿。全部在手機上跑，不經過任何伺服器。
-
---html-mode 決定怎麼把嵌入頁變回原始 HTML：捷徑預設會把網頁當成排版文字，
-<source> 這類標籤會不見。正式版用 base64，rename 也實測可用，direct 只是對照組。
 """
 import argparse
 import plistlib
@@ -15,7 +12,11 @@ import uuid
 
 # 以下三條規則同時給 check_live.py 用，改這裡兩邊一起生效。
 # 代碼：/post/代碼 或 /t/代碼。後面的帳號、xmt 參數、網域都不影響。
-CODE_RE = r"(?:(?<=/post/)|(?<=/t/))[A-Za-z0-9_-]+"
+# 連結包在別的網址參數裡時斜線會編碼成 %2F，比對時不分大小寫。
+CODE_RE = r"(?:(?<=/post/)|(?<=/t/)|(?<=%2Fpost%2F)|(?<=%2Ft%2F))[A-Za-z0-9_-]+"
+# 短網址要打開才知道是哪篇，頁面的 canonical 會有 /post/代碼。
+# 這裡不比對 /t/：頁面裡的靜態資源路徑也可能有。
+POST_RE = r"(?<=/post/)[A-Za-z0-9_-]+"
 # 回覆貼文的嵌入頁會先顯示上層貼文，目標貼文從第一個 OuterContainerFull 開始。
 # 只切到第一個：引用貼文會在同一篇裡再出現一次，切到最後會把主貼文切掉。
 STRIP_RE = r'^[\s\S]*?class="OuterContainer OuterContainerFull'
@@ -26,9 +27,15 @@ MEDIA_RE = (
     r'|(?<=src=")https://[^"]*/emg1/[^"]*url=https?[^&"]*(?:giphy|tenor|klipy|\.gif)[^"]*'
 )
 
-OBJ = "￼"
+OBJ = "\ufffc"
 NS = uuid.UUID("6f1f3a52-3c55-4a54-9d0e-7b6f7c1e0a11")
 INPUT = {"Type": "ExtensionInput"}
+# Threads App 分享時傳的是 URL 物件，要明確轉成文字。
+INPUT_TEXT = {
+    "Type": "ExtensionInput",
+    "Aggrandizements": [{"Type": "WFCoercionVariableAggrandizement", "CoercionItemClass": "WFStringContentItem"}],
+}
+CODES = {"Type": "Variable", "VariableName": "postCodes"}
 REPEAT_ITEM = {"Type": "Variable", "VariableName": "Repeat Item"}
 
 
@@ -96,27 +103,68 @@ def alert(title, message):
                   WFAlertActionCancelButtonShown=False)
 
 
-def html_actions(mode, page):
-    """把下載到的嵌入頁轉成原始 HTML 文字，回傳（動作清單, 文字變數）。"""
-    steps, source = [], page
-    if mode == "base64":
-        steps += [
-            action("base64encode", "b64-enc", WFInput=attach(source), WFEncodeMode="Encode",
-                   WFBase64LineBreakMode="None"),
-            action("base64encode", "b64-dec", WFInput=attach(output("b64-enc", "Base64 Encoded")),
-                   WFEncodeMode="Decode"),
-        ]
-        source = output("b64-dec", "Base64 Decoded")
-    if mode in ("rename", "base64"):
-        steps.append(action("setitemname", "rename", WFInput=attach(source), WFName="page.txt",
-                            WFDontIncludeFileExtension=False))
-        source = output("rename", "Renamed Item")
-    steps.append(action("detect.text", "html", WFInput=attach(source)))
-    return steps, output("html", "Text")
+def read_html(prefix, page):
+    """把下載到的網頁轉成原始 HTML 文字，回傳（動作清單, 文字變數）。
+
+    捷徑預設把網頁當成排版文字，<source> 這類標籤會不見，
+    所以 base64 來回一次再改名成 .txt，讀到的才是原始碼。
+    """
+    encoded = output(prefix + "-enc", "Base64 Encoded")
+    decoded = output(prefix + "-dec", "Base64 Decoded")
+    named = output(prefix + "-txt", "Renamed Item")
+    return [
+        action("base64encode", prefix + "-enc", WFInput=attach(page), WFEncodeMode="Encode",
+               WFBase64LineBreakMode="None"),
+        action("base64encode", prefix + "-dec", WFInput=attach(encoded), WFEncodeMode="Decode"),
+        action("setitemname", prefix + "-txt", WFInput=attach(decoded), WFName="page.txt",
+               WFDontIncludeFileExtension=False),
+        action("detect.text", prefix + "-html", WFInput=attach(named)),
+    ], output(prefix + "-html", "Text")
 
 
-def build(html_mode="base64"):
+def remember(codes):
+    return action("setvariable", WFVariableName=CODES["VariableName"], WFInput=attach(codes))
+
+
+def find_code():
+    """找出貼文代碼放進 postCodes，回傳（動作清單, 收到的內容）。"""
+    links = output("links", "URLs")
+    received = output("received", "Text")
     codes = output("codes", "Matches")
+    link = output("link", "Item from List")
+    link_page = output("link-page", "Contents of URL")
+    link_codes = output("link-codes", "Matches")
+    clipboard = output("clipboard", "Clipboard")
+    clip_codes = output("clip-codes", "Matches")
+    html_steps, html = read_html("link", link_page)
+    return [
+        # 文字轉換和取出網址兩條路都走，放在一起比對，哪一條拿到都算。
+        action("detect.link", "links", WFInput=attach(INPUT)),
+        action("gettext", "received", WFTextActionText=text(INPUT_TEXT, "\n", links)),
+        action("text.match", "codes", text=text(received), WFMatchTextPattern=CODE_RE,
+               WFMatchTextCaseSensitive=False),
+        remember(codes),
+        *block_if("need-more", codes, [], [
+            *block_if("has-link", links, [
+                # 短網址：打開來看轉到哪一篇。
+                action("getitemfromlist", "link", WFInput=attach(links), WFItemSpecifier="First Item"),
+                action("downloadurl", "link-page", WFURL=text(link), WFHTTPMethod="GET"),
+                *html_steps,
+                action("text.match", "link-codes", text=text(html), WFMatchTextPattern=POST_RE,
+                       WFMatchTextCaseSensitive=True),
+                remember(link_codes),
+            ], [
+                # 完全沒收到網址才讀剪貼簿，否則可能存到上一篇複製過的貼文。
+                action("getclipboard", "clipboard"),
+                action("text.match", "clip-codes", text=text(clipboard), WFMatchTextPattern=CODE_RE,
+                       WFMatchTextCaseSensitive=False),
+                remember(clip_codes),
+            ]),
+        ]),
+    ], received
+
+
+def build():
     code = output("code", "Item from List")
     page = output("page", "Contents of URL")
     body = output("body", "Updated Text")
@@ -124,7 +172,8 @@ def build(html_mode="base64"):
     fixed = output("fixed", "Updated Text")
     file = output("file", "Contents of URL")
     count = output("count", "Count")
-    html_steps, html = html_actions(html_mode, page)
+    html_steps, html = read_html("embed", page)
+    code_steps, received = find_code()
 
     save_all = [
         *block_repeat("each", media, [
@@ -141,7 +190,7 @@ def build(html_mode="base64"):
                WFNotificationActionSound=False),
     ]
     fetch_and_save = [
-        action("getitemfromlist", "code", WFInput=attach(codes), WFItemSpecifier="First Item"),
+        action("getitemfromlist", "code", WFInput=attach(CODES), WFItemSpecifier="First Item"),
         action("downloadurl", "page", WFURL=text("https://www.threads.com/t/", code, "/embed"),
                WFHTTPMethod="GET"),
         *html_steps,
@@ -155,10 +204,9 @@ def build(html_mode="base64"):
         ]),
     ]
     actions = [
-        action("text.match", "codes", text=text(INPUT), WFMatchTextPattern=CODE_RE,
-               WFMatchTextCaseSensitive=True),
-        *block_if("has-code", codes, fetch_and_save, [
-            alert("沒有收到 Threads 連結", "請在 Threads 貼文按分享，或先複製貼文連結再執行。"),
+        *code_steps,
+        *block_if("has-code", CODES, fetch_and_save, [
+            alert("沒有收到 Threads 連結", text("請把這個畫面截圖回報。收到的內容：\n", received)),
         ]),
     ]
     return {
@@ -179,8 +227,6 @@ def build(html_mode="base64"):
         "WFWorkflowTypes": ["ActionExtension", "WFWorkflowTypeShowInSearch"],
         "WFWorkflowHasShortcutInputVariables": True,
         "WFWorkflowHasOutputFallback": False,
-        # 從主畫面直接按時，改用剪貼簿裡的連結。
-        "WFWorkflowNoInputBehavior": {"Name": "WFWorkflowNoInputBehaviorGetClipboard"},
         "WFQuickActionSurfaces": [],
     }
 
@@ -188,10 +234,9 @@ def build(html_mode="base64"):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("out")
-    parser.add_argument("--html-mode", choices=("rename", "base64", "direct"), default="base64")
     args = parser.parse_args()
     with open(args.out, "wb") as f:
-        plistlib.dump(build(args.html_mode), f, fmt=plistlib.FMT_BINARY)
+        plistlib.dump(build(), f, fmt=plistlib.FMT_BINARY)
     print("wrote", args.out)
 
 

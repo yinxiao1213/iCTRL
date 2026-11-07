@@ -33,6 +33,10 @@ TEST_RUNNER_ICTRL_ALLOW_AUTH_ONCE=1 xcodebuild test-without-building \
     > "$OUT/runner.log" 2>&1 &
 RUNNER=$!
 
+# 長按連結測 URL 物件要用的測試頁。
+python3 -m http.server 8765 --bind 127.0.0.1 --directory threads-saver/testpage > /dev/null 2>&1 &
+HTTP=$!
+
 python3 Tests/sim/shortcut_e2e.py "$UDID" "$BASE" "$OUT" 2>&1 | tee "$OUT/e2e.txt"
 RESULT=${PIPESTATUS[0]}
 
@@ -50,7 +54,7 @@ with open(out, "wb") as f:
         print("log show 逾時，只留下已讀到的部分")
 PY
 
-kill -9 "$RUNNER" 2>/dev/null
+kill -9 "$RUNNER" "$HTTP" 2>/dev/null
 xcrun simctl io "$UDID" screenshot "$OUT/final.png" 2>/dev/null
 echo "e2e=$RESULT"
 exit "$RESULT"

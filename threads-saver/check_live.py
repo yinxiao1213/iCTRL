@@ -23,6 +23,7 @@ CASES = [
     ("https://www.threads.com/@orbismala/post/DeCQmv0Ehbi/video-why-the-harry-potter-clip/", 1, 0, "影片，含標題網址"),
     ("看這個 https://www.threads.com/@andypunzalan23/post/DQ2-kvEEgWT 好笑", 1, 0, "影片，連結夾在文字裡"),
     ("https://www.threads.com/@giphy/post/DFmKJ4zMWMv?hl=en", 0, 1, "GIF"),
+    ("https://l.threads.com/?u=https%3A%2F%2Fwww.threads.com%2F%40jarvm%2Fpost%2FDWhqV_fjQEC&e=x", 0, 1, "GIF，包在轉址參數裡"),
     ("https://www.threads.com/@jarvm/post/DWhqV_fjQEC", 0, 1, "GIF"),
     ("https://www.threads.com/@serenduckity/post/DTiVoO0lImw", 0, 1, "GIF"),
     ("https://www.threads.com/@mattlombardonfl/post/DXCxn9wkfC0/lfg", 0, 1, "GIF，內含引用貼文"),
@@ -76,7 +77,7 @@ def describe(data, silent=False):
 
 
 def extract(shared):
-    code = re.findall(CODE_RE, shared)[0]
+    code = re.findall(CODE_RE, shared, flags=re.I)[0]
     page = get(f"https://www.threads.com/t/{code}/embed").decode("utf8", "ignore")
     body = re.sub(STRIP_RE, "", page, count=1)
     return code, [m.replace("&amp;", "&") for m in re.findall(MEDIA_RE, body, flags=re.I)]

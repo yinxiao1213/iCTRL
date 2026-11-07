@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""產生三種寫法的捷徑並簽章，放進 signed/。iOS 只接受簽過章的捷徑檔。
+"""產生捷徑並簽章，放進 signed/ts-v2.shortcut。iOS 只接受簽過章的捷徑檔。
 
     sign.py
 
@@ -23,9 +23,9 @@ HUBSIGN = "https://hubsign.routinehub.services/sign"
 SIGNED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "signed")
 
 
-def sign(mode):
-    xml = plistlib.dumps(build(mode), fmt=plistlib.FMT_XML).decode()
-    dest = os.path.join(SIGNED, f"ts-{mode}.shortcut")
+def sign():
+    xml = plistlib.dumps(build(), fmt=plistlib.FMT_XML).decode()
+    dest = os.path.join(SIGNED, "ts-v2.shortcut")
     with tempfile.TemporaryDirectory() as folder:
         payload = os.path.join(folder, "payload.json")
         with open(payload, "w", encoding="utf8") as f:
@@ -38,17 +38,17 @@ def sign(mode):
         with open(reply, "rb") as f:
             data = f.read()
     if done.stdout != "200" or data[:4] != b"AEA1":
-        print(f"{mode} 簽章失敗: HTTP {done.stdout} {done.stderr.strip()} {data[:120]!r}")
+        print(f"簽章失敗: HTTP {done.stdout} {done.stderr.strip()} {data[:120]!r}")
         return False
     with open(dest, "wb") as f:
         f.write(data)
-    print(f"{mode} 簽章完成: {len(data)} bytes")
+    print(f"簽章完成: {len(data)} bytes")
     return True
 
 
 def main():
     os.makedirs(SIGNED, exist_ok=True)
-    return 0 if all([sign(m) for m in ("rename", "base64", "direct")]) else 1
+    return 0 if sign() else 1
 
 
 if __name__ == "__main__":

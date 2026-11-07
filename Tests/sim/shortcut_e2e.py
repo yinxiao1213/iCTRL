@@ -4,8 +4,8 @@
     Tests/sim/shortcut_e2e.py UDID 捷徑網址前綴 OUT_DIR
 
 靠 runner 看畫面、按按鈕，再直接看模擬器相簿的資料夾，確認檔案真的存進去。
-捷徑怎麼把網頁變回原始 HTML 只有實際跑才知道，所以三種寫法依序試，
-第一個全部通過的寫進 OUT_DIR/winner.txt。由 Tests/sim/run-shortcut.sh 啟動。
+ts-old 是第一版，只用來重現 Threads App 分享時的錯誤；ts-v2 全部通過才寫進
+OUT_DIR/winner.txt。由 Tests/sim/run-shortcut.sh 啟動。
 """
 import base64
 import os
@@ -22,14 +22,13 @@ HOST = "127.0.0.1:8200"
 KEY = "ci"
 SHORTCUTS = "com.apple.shortcuts"
 UDID, BASE, OUT = sys.argv[1:4]
-# base64 是正式版：四項加分享選單都實測通過。rename 四項也過，但沒測過分享選單。
-# 第一次開捷徑 App 時匯入畫面可能被新功能介紹吃掉，所以排兩次。
-MODES = ("base64", "base64", "rename", "direct")
-
 VIDEO = ("video", "https://www.threads.com/@rottentomatoes/post/DQP4mmZD_0S?xmt=AQG0abc&slof=1", {"mp4": 1})
 GIF = ("gif", "https://www.threads.com/@giphy/post/DFmKJ4zMWMv", {"gif": 1})
 REPLY = ("reply", "https://www.threads.com/@pamplemousse_and_circumstances/post/DXieIOeDRO3", {"gif": 1})
 PHOTOS = ("photos-only", "https://www.threads.com/@gif_names_finding/post/DU6V-sPExs6", {})
+ENCODED = ("encoded", "https://l.threads.com/?u=https%3A%2F%2Fwww.threads.com%2F%40jarvm%2Fpost%2FDWhqV_fjQEC&e=x",
+           {"gif": 1})
+SHORT = ("short-link", BASE.rsplit("/", 1)[0] + "/testpage/short.html", {"mp4": 1})
 
 # 畫面上出現就按。順序就是優先序；「Allow」要完全相符，才不會按到 Don't Allow。
 # OK 排在 Continue 前面：警告視窗蓋住畫面時，後面的 Continue 按不到。
@@ -288,11 +287,15 @@ def run_case(mode, case):
 
 
 def wait_album(before, want, limit=100):
-    """一邊回答詢問一邊等，回傳新檔案的種類統計。"""
+    """一邊回答詢問一邊等，回傳新檔案的種類統計。捷徑跳的對話框內容會記下來。"""
     end = time.time() + limit
     settled = 0
     while time.time() < end:
         time.sleep(1.5)
+        said = [i.get("label", "") for i in labels()]
+        said = [t for t in said if any(w in t for w in ("連結", "收到", "內容", "找不到", "回報"))]
+        if said:
+            log("  對話框:", said[:6])
         pressed = answer()
         settled = settled + 1 if (len(set(album()) - set(before)) >= want and pressed is None) else 0
         if settled >= 3:
@@ -301,64 +304,117 @@ def wait_album(before, want, limit=100):
     return {k: kinds.count(k) for k in set(kinds)}
 
 
+def report(name, got, want):
+    ok = got == want
+    log(("ok   " if ok else "FAIL ") + f"{name}: 預期 {want}，實際 {got}")
+    return ok
+
+
 def from_clipboard(mode):
-    """從主畫面按捷徑的情況：沒有輸入，改讀剪貼簿。"""
+    """沒有輸入時改讀剪貼簿。"""
     log("剪貼簿", mode)
     link = "https://www.threads.com/@orbismala/post/DeCQmv0Ehbi"
     subprocess.run(["xcrun", "simctl", "pbcopy", UDID], input=link, text=True, capture_output=True, timeout=30)
-    pasted = subprocess.run(["xcrun", "simctl", "pbpaste", UDID], capture_output=True, text=True, timeout=30)
-    log("  模擬器剪貼簿:", pasted.stdout[:80])
     before = album()
-    try_call("launch_app", {"bundle_id": SHORTCUTS})
-    time.sleep(3)
-    shot("clipboard-start")
-    tap_label([f"ts-{mode}"])
-    got = wait_album(before, 1, 45)
-    shot("clipboard-end")
-    log(("ok   " if got == {"mp4": 1} else "FAIL ") + f"剪貼簿: 實際 {got}")
+    open_url("shortcuts://run-shortcut?name=" + urllib.parse.quote(f"ts-{mode}"))
+    got = wait_album(before, 1, 60)
+    shot(f"clipboard-{mode}")
     try_call("home")
+    return report(f"{mode} 剪貼簿", got, {"mp4": 1})
 
 
-def from_share_sheet(mode):
-    """實際使用的路：開貼文 → 分享 → 選捷徑。輸入是網頁而不是文字，跑在分享擴充功能裡。"""
-    log("分享選單", mode)
-    before = album()
-    open_url("https://www.threads.com/@senwhitehouse/post/DOy2H84DpZ0")
-    time.sleep(12)
-    shot("share-page")
-    source = (try_call("page_source") or {})
-    lines = [line.strip()[:90] for line in str(source.get("source") or source.get("body") or source).split("\n")
-             if "Button" in line]
-    log("  按鈕:", lines[:24])
-    for word in ("Page Menu", "More", "Share"):
-        found = try_call("find_element", {"element_id": word, "bundle_id": "com.apple.mobilesafari", "match": "contains"})
-        log("  找", word, bool(found and found.get("ref")))
-        if found and found.get("ref"):
-            try_call("tap", {"ref": found["ref"]})
-            time.sleep(2.5)
-            shot("share-menu")
-            log("  選單:", [i.get("label") for i in labels()][:14])
-            if word != "Share":
-                tap_label(["Share"])
-                time.sleep(3)
-            break
+def shows_input(mode):
+    """找不到連結時，錯誤訊息要把收到的內容顯示出來，才能回報。"""
+    log("錯誤訊息", mode)
+    open_url("shortcuts://run-shortcut?name=" + urllib.parse.quote(f"ts-{mode}") + "&input=text&text=hellocheck")
+    end = time.time() + 40
+    seen = False
+    while time.time() < end and not seen:
+        time.sleep(2)
+        seen = any("hellocheck" in i.get("label", "") for i in labels())
+    shot(f"shows-input-{mode}")
+    answer()
+    log(("ok   " if seen else "FAIL ") + f"{mode} 錯誤訊息顯示收到的內容")
+    try_call("home")
+    return seen
+
+
+def pick_shortcut(mode, tag):
+    """在分享選單裡往下找捷徑並點它。"""
     for round_no in range(7):
         items = labels()
         log("  分享選單:", [i.get("label") for i in items][:16])
-        shot(f"share-sheet-{round_no}")
+        shot(f"{tag}-sheet-{round_no}")
         item = next((i for i in items if f"ts-{mode}" in i.get("label", "")), None)
         if item:
             try_call("tap", {"x": item["center_x"], "y": item["center_y"]})
             log("  點了", item.get("label"))
-            break
+            return True
         try_call("drag", {"from_x": 200, "from_y": 720, "to_x": 200, "to_y": 330, "duration": 0.3})
         time.sleep(1.5)
-    else:
-        log("FAIL 分享選單: 找不到捷徑")
-        return
+    log(f"FAIL {tag}: 分享選單裡找不到捷徑")
+    return False
+
+
+def from_share_sheet(mode):
+    """Safari 網頁的分享鈕：輸入是網頁物件，跑在分享擴充功能裡。"""
+    log("分享選單", mode)
+    before = album()
+    open_url("https://www.threads.com/@senwhitehouse/post/DOy2H84DpZ0")
+    time.sleep(12)
+    shot(f"page-{mode}")
+    found = try_call("find_element", {"element_id": "Page Menu", "bundle_id": "com.apple.mobilesafari",
+                                      "match": "contains"})
+    if not (found and found.get("ref")):
+        log(f"FAIL {mode} 分享選單: 找不到 Page Menu")
+        return False
+    try_call("tap", {"ref": found["ref"]})
+    time.sleep(2.5)
+    tap_label(["Share"])
+    time.sleep(3)
+    if not pick_shortcut(mode, f"page-{mode}"):
+        return False
     got = wait_album(before, 1)
-    shot("share-end")
-    log(("ok   " if got == {"mp4": 1} else "FAIL ") + f"分享選單: 實際 {got}")
+    shot(f"page-{mode}-end")
+    return report(f"{mode} 分享選單", got, {"mp4": 1})
+
+
+def from_url_item(mode, want):
+    """Threads App 分享時傳的是 URL 物件。長按連結再分享，傳的就是同一種。"""
+    log("URL 物件", mode)
+    before = album()
+    open_url("http://127.0.0.1:8765/index.html")
+    link = None
+    for _ in range(12):
+        time.sleep(2)
+        link = next((i for i in labels() if "TESTLINK" in i.get("label", "").upper()), None)
+        if link:
+            break
+    if not link:
+        shot(f"url-{mode}-nopage")
+        log(f"FAIL {mode} URL 物件: 測試頁沒有開出來")
+        return False
+    try_call("long_press", {"x": link["center_x"], "y": link["center_y"], "duration": 1.5})
+    time.sleep(3)
+    shot(f"url-{mode}-menu")
+    log("  選單:", [i.get("label") for i in labels()][:14])
+    if not tap_label(["Share"]):
+        log(f"FAIL {mode} URL 物件: 長按選單沒有分享")
+        return False
+    time.sleep(3)
+    if not pick_shortcut(mode, f"url-{mode}"):
+        return False
+    got = wait_album(before, 1, 70 if want else 35)
+    shot(f"url-{mode}-end")
+    return report(f"{mode} URL 物件", got, want)
+
+
+def guarded(check, *args):
+    try:
+        return check(*args)
+    except Exception as e:  # noqa: BLE001
+        log("FAIL", getattr(check, "__name__", "?"), repr(e)[:200])
+        return False
 
 
 def main():
@@ -372,24 +428,31 @@ def main():
     info = try_call("device_info") or {}
     log("裝置", info.get("model"), info.get("system_version"))
 
-    for mode in MODES:
-        if not add_shortcut(mode):
-            continue
-        if all([run_case(mode, VIDEO), run_case(mode, GIF)]):
-            rest = [run_case(mode, REPLY), run_case(mode, PHOTOS)]
-            log(f"{mode} 基本兩項通過，回覆與純照片 {sum(rest)} / {len(rest)}")
-            if all(rest):
-                with open(os.path.join(OUT, "winner.txt"), "w") as f:
-                    f.write(mode)
-                log("採用", mode)
-                # 這兩項只回報結果：失敗也不影響已驗證的檔案，但要看得到。
-                for extra in (from_clipboard, from_share_sheet):
-                    try:
-                        extra(mode)
-                    except Exception as e:  # noqa: BLE001
-                        log("FAIL", extra.__name__, repr(e)[:200])
-                return 0
-    log("沒有一種寫法全部通過")
+    for mode in ("old", "v2"):
+        if not (add_shortcut(mode) or add_shortcut(mode)):
+            log("匯入失敗", mode)
+            return 1
+
+    # 重現：舊版收到 URL 物件會不會跳「沒有收到 Threads 連結」。
+    log("舊版重現結果:", "能存" if guarded(from_url_item, "old", {"mp4": 1}) else "存不到")
+
+    required = [
+        guarded(from_url_item, "v2", {"mp4": 1}),
+        guarded(run_case, "v2", VIDEO),
+        guarded(run_case, "v2", GIF),
+        guarded(run_case, "v2", REPLY),
+        guarded(run_case, "v2", PHOTOS),
+        guarded(from_share_sheet, "v2"),
+        guarded(run_case, "v2", ENCODED),
+        guarded(run_case, "v2", SHORT),
+        guarded(shows_input, "v2"),
+    ]
+    clipboard = guarded(from_clipboard, "v2")
+    log(f"v2 必要項目 {sum(required)} / {len(required)}，剪貼簿 {'通過' if clipboard else '沒過'}")
+    if all(required):
+        with open(os.path.join(OUT, "winner.txt"), "w") as f:
+            f.write("v2")
+        return 0
     return 1
 
 
