@@ -66,7 +66,7 @@ jobs:
           mkdir -p sim-out
           touch sim-build.log
           grep -E "error:|\*\* .* \*\*" sim-build.log | sort -u | head -100 > sim-out/build-errors.txt || true
-          rm -f sim-out/now.png
+          rm -f sim-out/now.jpg
           [ -f sim-out/runner.log ] && tail -c 200000 sim-out/runner.log > sim-out/runner.tail && mv sim-out/runner.tail sim-out/runner.log
           [ -f sim-out/shortcuts-log.txt ] && tail -c 3000000 sim-out/shortcuts-log.txt > sim-out/log.tail && mv sim-out/log.tail sim-out/shortcuts-log.txt
           printf '%s %s\n' "$GITHUB_SHA" "${{ job.status }}" > status.txt

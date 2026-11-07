@@ -83,15 +83,25 @@ def open_url(url):
 
 
 def labels():
-    """畫面上所有文字和位置（單位是點），在 Mac 上辨識模擬器的截圖。"""
-    png = os.path.join(OUT, "now.png")
+    """畫面上所有文字和位置（單位是點）。
+
+    畫面用 runner 拍（simctl io 在這裡常逾時），文字用 Mac 的 Vision 辨識，
+    因為 runner 的 screen_text 不給系統對話框的座標。
+    """
+    result = try_call("screenshot", {"format": "jpeg", "quality": 0.8})
+    if not result or not result.get("data"):
+        return []
+    path = os.path.join(OUT, "now.jpg")
+    with open(path, "wb") as f:
+        f.write(base64.b64decode(result["data"]))
     try:
-        subprocess.run(["xcrun", "simctl", "io", UDID, "screenshot", png], capture_output=True, timeout=30)
-        done = subprocess.run([OCR, png], capture_output=True, text=True, timeout=30)
+        done = subprocess.run([OCR, path], capture_output=True, text=True, timeout=30)
         found = json.loads(done.stdout or "[]")
     except (subprocess.TimeoutExpired, ValueError) as e:
         log("  ( 辨識失敗:", str(e)[:120], ")")
         return []
+    if done.stderr.strip():
+        log("  ( 辨識訊息:", done.stderr.strip()[:160], ")")
     return [{"label": i["label"], "center_x": round(i["cx"] * SIZE[0]), "center_y": round(i["cy"] * SIZE[1])}
             for i in found]
 
@@ -305,6 +315,7 @@ def main():
     log("裝置", info.get("model"), info.get("system_version"), info.get("point_width"), info.get("point_height"))
     if info.get("point_width") and info.get("point_height"):
         SIZE[:] = [info["point_width"], info["point_height"]]
+    log("辨識測試:", [i["label"] for i in labels()][:8])
 
     for mode in MODES:
         if not add_shortcut(mode):
