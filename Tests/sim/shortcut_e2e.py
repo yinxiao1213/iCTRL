@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """在 iOS 模擬器的捷徑 App 裡，實際匯入並執行 Threads 保存捷徑。
 
-    Tests/sim/shortcut_e2e.py UDID 捷徑網址前綴 OUT_DIR OCR執行檔
+    Tests/sim/shortcut_e2e.py UDID 捷徑網址前綴 OUT_DIR
 
 靠 runner 看畫面、按按鈕，再直接看模擬器相簿的資料夾，確認檔案真的存進去。
 捷徑怎麼把網頁變回原始 HTML 只有實際跑才知道，所以三種寫法依序試，
 第一個全部通過的寫進 OUT_DIR/winner.txt。由 Tests/sim/run-shortcut.sh 啟動。
 """
 import base64
-import json
 import os
 import subprocess
 import sys
@@ -22,8 +21,7 @@ import ictrl_rpc as rpc  # noqa: E402
 HOST = "127.0.0.1:8200"
 KEY = "ci"
 SHORTCUTS = "com.apple.shortcuts"
-UDID, BASE, OUT, OCR = sys.argv[1:5]
-SIZE = [402, 874]
+UDID, BASE, OUT = sys.argv[1:4]
 MODES = ("rename", "base64", "direct")
 
 VIDEO = ("video", "https://www.threads.com/@rottentomatoes/post/DQP4mmZD_0S?xmt=AQG0abc&slof=1", {"mp4": 1})
@@ -83,27 +81,9 @@ def open_url(url):
 
 
 def labels():
-    """畫面上所有文字和位置（單位是點）。
-
-    畫面用 runner 拍（simctl io 在這裡常逾時），文字用 Mac 的 Vision 辨識，
-    因為 runner 的 screen_text 不給系統對話框的座標。
-    """
-    result = try_call("screenshot", {"format": "jpeg", "quality": 0.8})
-    if not result or not result.get("data"):
-        return []
-    path = os.path.join(OUT, "now.jpg")
-    with open(path, "wb") as f:
-        f.write(base64.b64decode(result["data"]))
-    try:
-        done = subprocess.run([OCR, path], capture_output=True, text=True, timeout=30)
-        found = json.loads(done.stdout or "[]")
-    except (subprocess.TimeoutExpired, ValueError) as e:
-        log("  ( 辨識失敗:", str(e)[:120], ")")
-        return []
-    if done.stderr.strip():
-        log("  ( 辨識訊息:", done.stderr.strip()[:160], ")")
-    return [{"label": i["label"], "center_x": round(i["cx"] * SIZE[0]), "center_y": round(i["cy"] * SIZE[1])}
-            for i in found]
+    """畫面上的文字和位置，包含系統畫在 App 上面的對話框（overlay_items）。"""
+    result = try_call("screen_text") or {}
+    return result.get("items", []) + result.get("overlay_items", [])
 
 
 def answer():
@@ -312,10 +292,7 @@ def main():
     time.sleep(3)
     answer()
     info = try_call("device_info") or {}
-    log("裝置", info.get("model"), info.get("system_version"), info.get("point_width"), info.get("point_height"))
-    if info.get("point_width") and info.get("point_height"):
-        SIZE[:] = [info["point_width"], info["point_height"]]
-    log("辨識測試:", [i["label"] for i in labels()][:8])
+    log("裝置", info.get("model"), info.get("system_version"))
 
     for mode in MODES:
         if not add_shortcut(mode):

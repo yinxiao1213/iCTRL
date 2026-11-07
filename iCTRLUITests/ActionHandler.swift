@@ -7413,6 +7413,7 @@ class ActionHandler {
         let overlayMs = (nowMonotonic - tOverlay) * 1000
         var items: [JSONValue] = []
         var overlayText: [JSONValue] = []
+        var overlayItems: [JSONValue] = []
         for obs in (request.results ?? []) {
             guard let top = obs.topCandidates(1).first, top.confidence >= minConf else { continue }
             // Vision's box is normalised with the ORIGIN AT BOTTOM-LEFT; iOS points
@@ -7428,6 +7429,11 @@ class ActionHandler {
             let center = CGPoint(x: x + w / 2, y: y + h / 2)
             if overlays.contains(where: { $0.contains(center) }) {
                 if overlayText.count < 12 { overlayText.append(.string(top.string)) }
+                overlayItems.append(.object([
+                    "label": .string(top.string),
+                    "center_x": .double(center.x.rounded()),
+                    "center_y": .double(center.y.rounded()),
+                ]))
                 continue
             }
             items.append(.object([
@@ -7489,6 +7495,7 @@ class ActionHandler {
             "hint": .string(hint),
         ]
         if !overlayText.isEmpty { result["overlay_text"] = .array(overlayText) }
+        if !overlayItems.isEmpty { result["overlay_items"] = .array(overlayItems) }
         // A captcha drawn outside the tree is only in the pixels (its coverage can be near zero).
         let tBlock = nowMonotonic
         flagBlockers(items.compactMap(Self.ocrScreenText), bid: resolveForegroundBundleId(), overlayShown: false, into: &result)
