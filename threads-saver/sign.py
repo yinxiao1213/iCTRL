@@ -40,8 +40,10 @@ def sign():
     if done.stdout != "200" or data[:4] != b"AEA1":
         print(f"簽章失敗: HTTP {done.stdout} {done.stderr.strip()} {data[:120]!r}")
         return False
-    with open(dest, "wb") as f:
-        f.write(data)
+    # 捷徑匯入後的名稱就是檔名：ts-v3 給實測用，Threads下載 給使用者裝。
+    for path in (dest, os.path.join(SIGNED, "Threads下載.shortcut")):
+        with open(path, "wb") as f:
+            f.write(data)
     print(f"簽章完成: {len(data)} bytes")
     return True
 
