@@ -72,7 +72,11 @@ def wait_server():
 
 
 def open_url(url):
-    done = subprocess.run(["xcrun", "simctl", "openurl", UDID, url], capture_output=True, text=True, timeout=60)
+    try:
+        done = subprocess.run(["xcrun", "simctl", "openurl", UDID, url], capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        log("  openurl 逾時", url[:110])
+        return
     log("  openurl", url[:110], "結束碼", done.returncode, done.stderr.strip()[:200])
 
 
@@ -86,7 +90,7 @@ def answer():
     for want in ANSWERS:
         for item in items:
             label = item.get("label", "").strip()
-            if label.lower() == want.lower() or (want == "Always Allow" and want in label):
+            if label.lower() == want.lower() or (want in ("Always Allow", "Add Shortcut") and want in label):
                 if try_call("tap", {"x": item["center_x"], "y": item["center_y"]}) is not None:
                     log("  按了", want)
                     return want
@@ -235,6 +239,8 @@ def add_shortcut(mode):
             break
     shot(f"import-{mode}-end")
     log("  已加入" if added else "  沒看到 Add Shortcut")
+    if not added:
+        tap_label(["Cancel"], exact=True)
     return added
 
 
