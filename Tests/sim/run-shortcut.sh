@@ -37,10 +37,20 @@ python3 Tests/sim/shortcut_e2e.py "$UDID" "$BASE" "$OUT" 2>&1 | tee "$OUT/e2e.tx
 RESULT=${PIPESTATUS[0]}
 
 # 捷徑 App 的系統記錄：匯入被拒的原因只會出現在這裡。
-xcrun simctl spawn "$UDID" log show --last 25m --style compact     --predicate 'process == "Shortcuts" OR process == "siriactionsd" OR subsystem BEGINSWITH "com.apple.shortcuts"'     2>/dev/null | tail -c 3000000 > "$OUT/shortcuts-log.txt"
+# log show 在模擬器上可能跑很久，最多等 2 分鐘，只留已經讀到的部分。
+python3 - "$UDID" "$OUT/shortcuts-log.txt" <<'PY'
+import subprocess, sys
+udid, out = sys.argv[1:3]
+predicate = 'process == "Shortcuts" OR process == "siriactionsd" OR subsystem BEGINSWITH "com.apple.shortcuts"'
+with open(out, "wb") as f:
+    try:
+        subprocess.run(["xcrun", "simctl", "spawn", udid, "log", "show", "--last", "15m", "--style", "compact",
+                        "--predicate", predicate], stdout=f, stderr=subprocess.DEVNULL, timeout=120)
+    except subprocess.TimeoutExpired:
+        print("log show 逾時，只留下已讀到的部分")
+PY
 
-kill "$RUNNER" 2>/dev/null
-wait "$RUNNER" 2>/dev/null
+kill -9 "$RUNNER" 2>/dev/null
 xcrun simctl io "$UDID" screenshot "$OUT/final.png" 2>/dev/null
 echo "e2e=$RESULT"
 exit "$RESULT"

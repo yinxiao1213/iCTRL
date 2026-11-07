@@ -57,6 +57,7 @@ jobs:
             2>&1 | tee sim-build.log
 
       - name: Run in the Shortcuts app
+        timeout-minutes: 25
         run: bash Tests/sim/run-shortcut.sh "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/threads-saver/signed" sim-out
 
       - name: Publish result
@@ -66,6 +67,7 @@ jobs:
           touch sim-build.log
           grep -E "error:|\*\* .* \*\*" sim-build.log | sort -u | head -100 > sim-out/build-errors.txt || true
           [ -f sim-out/runner.log ] && tail -c 200000 sim-out/runner.log > sim-out/runner.tail && mv sim-out/runner.tail sim-out/runner.log
+          [ -f sim-out/shortcuts-log.txt ] && tail -c 3000000 sim-out/shortcuts-log.txt > sim-out/log.tail && mv sim-out/log.tail sim-out/shortcuts-log.txt
           printf '%s %s\n' "$GITHUB_SHA" "${{ job.status }}" > status.txt
           tar czf sim-report.tgz -C sim-out .
           FILES="status.txt sim-report.tgz"
