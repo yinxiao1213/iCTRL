@@ -33,7 +33,12 @@ TEST_RUNNER_ICTRL_ALLOW_AUTH_ONCE=1 xcodebuild test-without-building \
     > "$OUT/runner.log" 2>&1 &
 RUNNER=$!
 
-# 長按連結測 URL 物件要用的測試頁。
+# 長按連結測 URL 物件要用的測試頁，以及匯入用的捷徑檔。
+# 內容相同、檔名不同：同一個檔名匯入失敗後，重試也不會成功。
+SIGNED=threads-saver/signed
+cp "$SIGNED/ts-warm.shortcut" threads-saver/testpage/ts-warm.shortcut
+cp "$SIGNED/ts-warm.shortcut" threads-saver/testpage/ts-warm2.shortcut
+for name in v4 v4b v4c; do cp "$SIGNED/ts-v4.shortcut" "threads-saver/testpage/ts-$name.shortcut"; done
 python3 -m http.server 8765 --bind 127.0.0.1 --directory threads-saver/testpage > /dev/null 2>&1 &
 HTTP=$!
 

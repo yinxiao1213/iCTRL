@@ -21,6 +21,7 @@ HOST = "127.0.0.1:8200"
 KEY = "ci"
 SHORTCUTS = "com.apple.shortcuts"
 UDID, BASE, OUT = sys.argv[1:4]
+LOCAL = "http://127.0.0.1:8765"
 VIDEO = ("video", "https://www.threads.com/@rottentomatoes/post/DQP4mmZD_0S?xmt=AQG0abc&slof=1", {"mp4": 1})
 GIF = ("gif", "https://www.threads.com/@giphy/post/DFmKJ4zMWMv", {"gif": 1})
 REPLY = ("reply", "https://www.threads.com/@pamplemousse_and_circumstances/post/DXieIOeDRO3", {"gif": 1})
@@ -183,7 +184,7 @@ def add_shortcut(mode):
     log("匯入", mode)
     warm_up()
     name = f"ts-{mode}"
-    open_url(f"{BASE}/{name}.shortcut")
+    open_url(f"{LOCAL}/{name}.shortcut")
     end = time.time() + 100
     round_no = 0
     path = None
@@ -191,7 +192,7 @@ def add_shortcut(mode):
         time.sleep(2)
         round_no += 1
         if round_no % 8 == 0:
-            open_url(f"{BASE}/{name}.shortcut")
+            open_url(f"{LOCAL}/{name}.shortcut")
         items = labels()
         if round_no % 6 == 1:
             shot(f"safari-{mode}-{round_no}")
@@ -441,28 +442,33 @@ def main():
     info = try_call("device_info") or {}
     log("裝置", info.get("model"), info.get("system_version"))
 
-    # 模擬器開機後第一個匯入的檔案不會跳出加入畫面，重試同一個檔案也一樣，
-    # 換一個檔案才正常，所以先拿一個暖機檔擋掉。
-    add_shortcut("warm")
-    if not (add_shortcut("v4") or add_shortcut("v4")):
+    # 模擬器開機後第一個匯入的檔案不會跳出加入畫面，同一個檔案重試也一樣，要換檔名。
+    # run-shortcut.sh 準備了幾份內容相同、檔名不同的檔案，輪流匯入到成功為止。
+    target = None
+    for mode in ("warm", "warm2", "v4", "v4b", "v4c"):
+        if add_shortcut(mode) and mode.startswith("v4"):
+            target = mode
+            break
+    if not target:
         log("匯入失敗 v4")
         return 1
+    log("測試對象", target)
 
     required = [
-        guarded(run_case, "v4", SHORT),
-        guarded(run_case, "v4", VIDEO),
-        guarded(run_case, "v4", GIF),
-        guarded(run_case, "v4", REPLY),
-        guarded(run_case, "v4", PHOTOS),
-        guarded(run_case, "v4", ENCODED),
-        guarded(from_share_sheet, "v4"),
+        guarded(run_case, target, SHORT),
+        guarded(run_case, target, VIDEO),
+        guarded(run_case, target, GIF),
+        guarded(run_case, target, REPLY),
+        guarded(run_case, target, PHOTOS),
+        guarded(run_case, target, ENCODED),
+        guarded(from_share_sheet, target),
+        guarded(from_url_item, target, {"mp4": 1}),
     ]
     extras = [
-        guarded(shows_input, "v4"),
-        guarded(from_clipboard, "v4"),
-        guarded(from_url_item, "v4", {"mp4": 1}),
+        guarded(shows_input, target),
+        guarded(from_clipboard, target),
     ]
-    log(f"v4 必要項目 {sum(required)} / {len(required)}，其他 {sum(extras)} / {len(extras)}")
+    log(f"必要項目 {sum(required)} / {len(required)}，其他 {sum(extras)} / {len(extras)}")
     if all(required):
         with open(os.path.join(OUT, "winner.txt"), "w") as f:
             f.write("v4")
