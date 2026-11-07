@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""產生捷徑並簽章，放進 signed/ts-v2.shortcut。iOS 只接受簽過章的捷徑檔。
+"""產生捷徑並簽章，放進 signed/ts-v3.shortcut。iOS 只接受簽過章的捷徑檔。
 
     sign.py
 
@@ -25,7 +25,7 @@ SIGNED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "signed")
 
 def sign():
     xml = plistlib.dumps(build(), fmt=plistlib.FMT_XML).decode()
-    dest = os.path.join(SIGNED, "ts-v2.shortcut")
+    dest = os.path.join(SIGNED, "ts-v3.shortcut")
     with tempfile.TemporaryDirectory() as folder:
         payload = os.path.join(folder, "payload.json")
         with open(payload, "w", encoding="utf8") as f:

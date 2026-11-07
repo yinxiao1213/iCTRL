@@ -11,7 +11,7 @@ import sys
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from build_shortcut import CODE_RE, MEDIA_RE, STRIP_RE  # noqa: E402
+from build_shortcut import CODE_RE, LINK_RE, MEDIA_RE, POST_RE, STRIP_RE  # noqa: E402
 
 # 模擬捷徑沒有自訂 User-Agent 時送出的樣子。
 UA = "Shortcuts/4046 CFNetwork/3860 Darwin/25.0.0"
@@ -77,13 +77,25 @@ def describe(data, silent=False):
 
 
 def extract(shared):
-    code = re.findall(CODE_RE, shared, flags=re.I)[0]
+    found = re.findall(CODE_RE, shared, flags=re.I)
+    if found:
+        code = found[0]
+    else:
+        # 短網址：和捷徑一樣打開來找。
+        landing = get(re.findall(LINK_RE, shared)[0]).decode("utf8", "ignore")
+        code = re.findall(POST_RE, landing)[0]
     page = get(f"https://www.threads.com/t/{code}/embed").decode("utf8", "ignore")
     body = re.sub(STRIP_RE, "", page, count=1)
     return code, [m.replace("&amp;", "&") for m in re.findall(MEDIA_RE, body, flags=re.I)]
 
 
 def main():
+    # 指令後面可以接分享連結，只看抓到什麼，不用把別人的貼文寫進這個公開專案。
+    for shared in sys.argv[1:]:
+        code, urls = extract(shared)
+        print(code, [describe(get(url))[1] for url in urls] or "沒有媒體", flush=True)
+    if sys.argv[1:]:
+        return 0
     bad = 0
     for shared, videos, gifs, note in CASES:
         code, urls = extract(shared)

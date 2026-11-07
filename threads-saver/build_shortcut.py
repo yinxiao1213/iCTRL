@@ -14,9 +14,11 @@ import uuid
 # 代碼：/post/代碼 或 /t/代碼。後面的帳號、xmt 參數、網域都不影響。
 # 連結包在別的網址參數裡時斜線會編碼成 %2F，比對時不分大小寫。
 CODE_RE = r"(?:(?<=/post/)|(?<=/t/)|(?<=%2Fpost%2F)|(?<=%2Ft%2F))[A-Za-z0-9_-]+"
-# 短網址要打開才知道是哪篇，頁面的 canonical 會有 /post/代碼。
+# Threads App 分享出來的是 /share/XXX 短網址，看不出代碼，要打開才會 302 轉到
+# /@帳號/post/代碼，頁面的 canonical 有 /post/代碼。
 # 這裡不比對 /t/：頁面裡的靜態資源路徑也可能有。
 POST_RE = r"(?<=/post/)[A-Za-z0-9_-]+"
+LINK_RE = r"https?://[^\s]+"
 # 回覆貼文的嵌入頁會先顯示上層貼文，目標貼文從第一個 OuterContainerFull 開始。
 # 只切到第一個：引用貼文會在同一篇裡再出現一次，切到最後會把主貼文切掉。
 STRIP_RE = r'^[\s\S]*?class="OuterContainer OuterContainerFull'
@@ -30,7 +32,7 @@ MEDIA_RE = (
 OBJ = "\ufffc"
 NS = uuid.UUID("6f1f3a52-3c55-4a54-9d0e-7b6f7c1e0a11")
 INPUT = {"Type": "ExtensionInput"}
-# Threads App 分享時傳的是 URL 物件，要明確轉成文字。
+# 分享進來的可能是 URL 物件，明確轉成文字。
 INPUT_TEXT = {
     "Type": "ExtensionInput",
     "Aggrandizements": [{"Type": "WFCoercionVariableAggrandizement", "CoercionItemClass": "WFStringContentItem"}],
@@ -128,7 +130,8 @@ def remember(codes):
 
 def find_code():
     """找出貼文代碼放進 postCodes，回傳（動作清單, 收到的內容）。"""
-    links = output("links", "URLs")
+    detected = output("detected", "URLs")
+    links = output("links", "Matches")
     received = output("received", "Text")
     codes = output("codes", "Matches")
     link = output("link", "Item from List")
@@ -139,12 +142,14 @@ def find_code():
     html_steps, html = read_html("link", link_page)
     return [
         # 文字轉換和取出網址兩條路都走，放在一起比對，哪一條拿到都算。
-        action("detect.link", "links", WFInput=attach(INPUT)),
-        action("gettext", "received", WFTextActionText=text(INPUT_TEXT, "\n", links)),
+        action("detect.link", "detected", WFInput=text(INPUT)),
+        action("gettext", "received", WFTextActionText=text(INPUT_TEXT, "\n", detected)),
         action("text.match", "codes", text=text(received), WFMatchTextPattern=CODE_RE,
                WFMatchTextCaseSensitive=False),
         remember(codes),
         *block_if("need-more", codes, [], [
+            action("text.match", "links", text=text(received), WFMatchTextPattern=LINK_RE,
+                   WFMatchTextCaseSensitive=False),
             *block_if("has-link", links, [
                 # 短網址：打開來看轉到哪一篇。
                 action("getitemfromlist", "link", WFInput=attach(links), WFItemSpecifier="First Item"),

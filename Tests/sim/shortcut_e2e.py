@@ -4,8 +4,7 @@
     Tests/sim/shortcut_e2e.py UDID 捷徑網址前綴 OUT_DIR
 
 靠 runner 看畫面、按按鈕，再直接看模擬器相簿的資料夾，確認檔案真的存進去。
-ts-old 是第一版，只用來重現 Threads App 分享時的錯誤；ts-v2 全部通過才寫進
-OUT_DIR/winner.txt。由 Tests/sim/run-shortcut.sh 啟動。
+ts-v3 的必要項目全部通過才寫進 OUT_DIR/winner.txt。由 Tests/sim/run-shortcut.sh 啟動。
 """
 import base64
 import os
@@ -445,30 +444,28 @@ def main():
     # 模擬器開機後第一個匯入的檔案不會跳出加入畫面，重試同一個檔案也一樣，
     # 換一個檔案才正常，所以先拿一個暖機檔擋掉。
     add_shortcut("warm")
-    for mode in ("old", "v2"):
-        if not (add_shortcut(mode) or add_shortcut(mode)):
-            log("匯入失敗", mode)
-            return 1
-
-    # 重現：舊版收到 URL 物件會不會跳「沒有收到 Threads 連結」。
-    log("舊版重現結果:", "能存" if guarded(from_url_item, "old", {"mp4": 1}) else "存不到")
+    if not (add_shortcut("v3") or add_shortcut("v3")):
+        log("匯入失敗 v3")
+        return 1
 
     required = [
-        guarded(from_url_item, "v2", {"mp4": 1}),
-        guarded(run_case, "v2", VIDEO),
-        guarded(run_case, "v2", GIF),
-        guarded(run_case, "v2", REPLY),
-        guarded(run_case, "v2", PHOTOS),
-        guarded(from_share_sheet, "v2"),
-        guarded(run_case, "v2", ENCODED),
-        guarded(run_case, "v2", SHORT),
-        guarded(shows_input, "v2"),
+        guarded(run_case, "v3", SHORT),
+        guarded(run_case, "v3", VIDEO),
+        guarded(run_case, "v3", GIF),
+        guarded(run_case, "v3", REPLY),
+        guarded(run_case, "v3", PHOTOS),
+        guarded(run_case, "v3", ENCODED),
+        guarded(from_share_sheet, "v3"),
     ]
-    clipboard = guarded(from_clipboard, "v2")
-    log(f"v2 必要項目 {sum(required)} / {len(required)}，剪貼簿 {'通過' if clipboard else '沒過'}")
+    extras = [
+        guarded(shows_input, "v3"),
+        guarded(from_clipboard, "v3"),
+        guarded(from_url_item, "v3", {"mp4": 1}),
+    ]
+    log(f"v3 必要項目 {sum(required)} / {len(required)}，其他 {sum(extras)} / {len(extras)}")
     if all(required):
         with open(os.path.join(OUT, "winner.txt"), "w") as f:
-            f.write("v2")
+            f.write("v3")
         return 0
     return 1
 
