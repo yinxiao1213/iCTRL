@@ -1,71 +1,54 @@
 #!/usr/bin/env python3
-"""幫捷徑簽章。iOS 只接受簽過章的捷徑檔。
+"""產生三種寫法的捷徑並簽章，放進 signed/。iOS 只接受簽過章的捷徑檔。
 
-    sign.py 未簽章檔 輸出檔 [--hubsign]
+    sign.py
 
-先用 macOS 內建的 shortcuts sign。加了 --hubsign 時，內建失敗會改用 RoutineHub
-的公開簽章服務；送出去的只有捷徑本身的動作，沒有任何個人資料。
+macOS 的 shortcuts sign 要登入 iCloud，雲端 Mac 用不了，所以改用 RoutineHub 的
+公開簽章服務 HubSign。送出去的只有捷徑本身的動作，沒有任何個人資料。
+要在一般電腦上跑：HubSign 會拒絕雲端機房送來的請求（403）。
+
+簽章憑證有效期約一年，過期前重跑一次再推上去就好。已加入手機的捷徑不受影響。
 """
-import argparse
 import json
+import os
 import plistlib
 import subprocess
 import sys
-import urllib.request
+import tempfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from build_shortcut import build  # noqa: E402
 
 HUBSIGN = "https://hubsign.routinehub.services/sign"
+SIGNED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "signed")
 
 
-def signed(path):
-    try:
-        with open(path, "rb") as f:
-            return f.read(4) == b"AEA1"
-    except OSError:
-        return False
-
-
-def native(source, dest):
-    try:
-        done = subprocess.run(["shortcuts", "sign", "--mode", "anyone", "--input", source, "--output", dest],
-                              capture_output=True, text=True, timeout=180)
-    except (OSError, subprocess.TimeoutExpired) as e:
-        print("shortcuts sign 沒有完成:", e)
-        return False
-    print("shortcuts sign 結束碼", done.returncode, done.stdout.strip(), done.stderr.strip())
-    return done.returncode == 0 and signed(dest)
-
-
-def hubsign(source, dest):
-    with open(source, "rb") as f:
-        xml = plistlib.dumps(plistlib.load(f), fmt=plistlib.FMT_XML).decode()
-    body = json.dumps({"shortcutName": "ThreadsSaver", "shortcut": xml}).encode()
-    request = urllib.request.Request(HUBSIGN, body, {"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(request, timeout=60) as reply:
-            data = reply.read()
-    except OSError as e:
-        print("HubSign 失敗:", e)
+def sign(mode):
+    xml = plistlib.dumps(build(mode), fmt=plistlib.FMT_XML).decode()
+    dest = os.path.join(SIGNED, f"ts-{mode}.shortcut")
+    with tempfile.TemporaryDirectory() as folder:
+        payload = os.path.join(folder, "payload.json")
+        with open(payload, "w", encoding="utf8") as f:
+            json.dump({"shortcutName": "ThreadsSaver", "shortcut": xml}, f)
+        reply = os.path.join(folder, "reply")
+        done = subprocess.run(
+            ["curl", "-sS", "-m", "60", "-o", reply, "-w", "%{http_code}", "-X", "POST",
+             "-H", "Content-Type: application/json", "--data", "@" + payload, HUBSIGN],
+            capture_output=True, text=True)
+        with open(reply, "rb") as f:
+            data = f.read()
+    if done.stdout != "200" or data[:4] != b"AEA1":
+        print(f"{mode} 簽章失敗: HTTP {done.stdout} {done.stderr.strip()} {data[:120]!r}")
         return False
     with open(dest, "wb") as f:
         f.write(data)
-    print("HubSign 回傳", len(data), "bytes")
-    return signed(dest)
+    print(f"{mode} 簽章完成: {len(data)} bytes")
+    return True
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("source")
-    parser.add_argument("dest")
-    parser.add_argument("--hubsign", action="store_true")
-    args = parser.parse_args()
-    if native(args.source, args.dest):
-        print("簽章完成（macOS 內建）:", args.dest)
-        return 0
-    if args.hubsign and hubsign(args.source, args.dest):
-        print("簽章完成（HubSign）:", args.dest)
-        return 0
-    print("簽章失敗:", args.dest)
-    return 1
+    os.makedirs(SIGNED, exist_ok=True)
+    return 0 if all([sign(m) for m in ("rename", "base64", "direct")]) else 1
 
 
 if __name__ == "__main__":

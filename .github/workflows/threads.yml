@@ -34,26 +34,14 @@ jobs:
           set -o pipefail
           PYTHONIOENCODING=utf-8 python3 threads-saver/check_live.py 2>&1 | tee live.txt
 
-      - name: Build and sign
-        run: |
-          set -o pipefail
-          mkdir -p out
-          for mode in rename base64 direct; do
-            python3 threads-saver/build_shortcut.py "out/ts-$mode-unsigned.shortcut" --html-mode "$mode"
-            PYTHONIOENCODING=utf-8 python3 threads-saver/sign.py "out/ts-$mode-unsigned.shortcut" "out/ts-$mode.shortcut" --hubsign 2>&1 | tee -a sign.log
-          done
-
-      - name: Publish signed files
+      - name: Publish format check
         if: always()
         run: |
-          touch live.txt sign.log
-          printf '%s signing %s\n' "$GITHUB_SHA" "${{ job.status }}" > status.txt
+          touch live.txt
+          printf '%s started
+' "$GITHUB_SHA" > status.txt
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Threads 保存捷徑" --notes "由 GitHub Actions 從 threads-saver 分支產生。" --target "$GITHUB_SHA"
-          FILES="status.txt live.txt sign.log"
-          for f in out/ts-rename.shortcut out/ts-base64.shortcut out/ts-direct.shortcut; do
-            [ -f "$f" ] && FILES="$FILES $f"
-          done
-          gh release upload "$TAG" $FILES --clobber
+          gh release upload "$TAG" status.txt live.txt --clobber
 
       - name: Install xcodegen
         run: brew install xcodegen
@@ -70,7 +58,7 @@ jobs:
             2>&1 | tee sim-build.log
 
       - name: Run in the Shortcuts app
-        run: bash Tests/sim/run-shortcut.sh "https://github.com/${{ github.repository }}/releases/download/$TAG" sim-out
+        run: bash Tests/sim/run-shortcut.sh "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/threads-saver/signed" sim-out
 
       - name: Publish result
         if: always()
@@ -84,7 +72,8 @@ jobs:
           FILES="status.txt sim-report.tgz"
           if [ -f sim-out/winner.txt ]; then
             # 給使用者的就是模擬器實測過的同一個檔案。
-            cp "out/ts-$(cat sim-out/winner.txt).shortcut" out/ThreadsSaver.shortcut
+            mkdir -p out
+            cp "threads-saver/signed/ts-$(cat sim-out/winner.txt).shortcut" out/ThreadsSaver.shortcut
             FILES="$FILES out/ThreadsSaver.shortcut"
           fi
           gh release upload "$TAG" $FILES --clobber
