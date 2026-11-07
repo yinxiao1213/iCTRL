@@ -428,8 +428,11 @@ def main():
     info = try_call("device_info") or {}
     log("裝置", info.get("model"), info.get("system_version"))
 
+    # 模擬器開機後第一個匯入的檔案不會跳出加入畫面，重試同一個檔案也一樣，
+    # 換一個檔案才正常，所以先拿一個暖機檔擋掉。
+    add_shortcut("warm")
     for mode in ("old", "v2"):
-        if not (add_shortcut(mode) or add_shortcut(mode)):
+        if not add_shortcut(mode):
             log("匯入失敗", mode)
             return 1
 
