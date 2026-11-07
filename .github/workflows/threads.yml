@@ -38,8 +38,7 @@ jobs:
         if: always()
         run: |
           touch live.txt
-          printf '%s started
-' "$GITHUB_SHA" > status.txt
+          echo "$GITHUB_SHA started" > status.txt
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --title "Threads 保存捷徑" --notes "由 GitHub Actions 從 threads-saver 分支產生。" --target "$GITHUB_SHA"
           gh release upload "$TAG" status.txt live.txt --clobber
 
