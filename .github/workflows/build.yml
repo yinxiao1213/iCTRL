@@ -15,9 +15,6 @@ concurrency:
 env:
   # The Xcode the official iCTRL releases are built with.
   XCODE: /Applications/Xcode_27.1.app
-  # Each branch publishes to its own release, so one never overwrites the
-  # other's IPAs: script-recorder → ci, location-sim → location-ci.
-  REL: ${{ github.ref_name == 'location-sim' && 'location-ci' || 'ci' }}
 
 jobs:
   ipa:
@@ -55,6 +52,9 @@ jobs:
           grep -E "error:|FAIL |passed$|BUILD (SUCCEEDED|FAILED)|\*\* .* \*\*|^make: |❌|🔴" build.log | sort -u | head -300 > errors.txt || true
           tail -c 3000000 build.log > build-tail.log
           printf '%s %s\n' "$GITHUB_SHA" "${{ job.status }}" > status.txt
+          # Each branch publishes to its own release, so one never overwrites
+          # the other's IPAs: script-recorder -> ci, location-sim -> location-ci.
+          REL=ci; [ "$GITHUB_REF_NAME" = location-sim ] && REL=location-ci
           gh release view "$REL" >/dev/null 2>&1 || gh release create "$REL" --prerelease --title "Latest build ($GITHUB_REF_NAME)" --notes "Built by GitHub Actions from the $GITHUB_REF_NAME branch." --target "$GITHUB_SHA"
           FILES="status.txt errors.txt env.log build-tail.log"
           for f in release/iCTRL.ipa release/iCTRLUITests-Runner.ipa; do
@@ -100,5 +100,8 @@ jobs:
           printf '%s %s\n' "$GITHUB_SHA" "${{ job.status }}" > sim-out/status.txt
           tar czf sim-report.tgz -C sim-out .
           printf '%s %s\n' "$GITHUB_SHA" "${{ job.status }}" > sim-status.txt
+          # Each branch publishes to its own release, so one never overwrites
+          # the other's IPAs: script-recorder -> ci, location-sim -> location-ci.
+          REL=ci; [ "$GITHUB_REF_NAME" = location-sim ] && REL=location-ci
           gh release view "$REL" >/dev/null 2>&1 || gh release create "$REL" --prerelease --title "Latest build ($GITHUB_REF_NAME)" --notes "Built by GitHub Actions from the $GITHUB_REF_NAME branch." --target "$GITHUB_SHA"
           gh release upload "$REL" sim-report.tgz sim-status.txt --clobber
