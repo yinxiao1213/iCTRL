@@ -200,6 +200,10 @@ struct JoystickPad: View {
     @State private var lastSent = Date.distantPast
     private let radius: CGFloat = 56
 
+    init(onChange: @escaping (Double, Double) -> Void) {
+        self.onChange = onChange
+    }
+
     var body: some View {
         ZStack {
             Circle()

@@ -53,7 +53,6 @@ final class LocationKeepAlive: NSObject, CLLocationManagerDelegate {
     private var player = AVAudioPlayerNode()
     private var keeping = false
     private var audioTimer: Timer?
-    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     /// Location updates for the map, while the screen is showing.
     private var watching = false
 
@@ -103,7 +102,6 @@ final class LocationKeepAlive: NSObject, CLLocationManagerDelegate {
         ictrlLog("📍 keep-alive off")
         refreshAudio()
         refreshLocation()
-        endBackgroundTask()
     }
 
     /// Re-read the settings while running.
@@ -241,30 +239,18 @@ final class LocationKeepAlive: NSObject, CLLocationManagerDelegate {
 
     // MARK: - App lifecycle
 
-    /// A little extra time while the background modes take over.
+    /// No extra background time is asked for: the two modes above are the only
+    /// reason iCTRL runs back there, so turning them off shows what iOS does.
     @objc private func didEnterBackground() {
-        guard keeping else { return }
-        endBackgroundTask()
-        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "ictrl.location") { [weak self] in
-            self?.endBackgroundTask()
-        }
         // The map's own updates are not needed back there; keep-alive ones are.
-        if !(keeping && Self.locationEnabled) && watching {
+        if watching && !(keeping && Self.locationEnabled) {
             manager.stopUpdatingLocation()
         }
-        ictrlLog("📍 in background (audio \(state.audio), location \(state.location))")
+        if keeping { ictrlLog("📍 in background (audio \(state.audio), location \(state.location))") }
     }
 
     @objc private func willEnterForeground() {
-        endBackgroundTask()
         refreshLocation()
         recoverAudio()
-    }
-
-    private func endBackgroundTask() {
-        if backgroundTask != .invalid {
-            UIApplication.shared.endBackgroundTask(backgroundTask)
-            backgroundTask = .invalid
-        }
     }
 }
