@@ -49,8 +49,20 @@ python3 Tests/sim/e2e.py app "$OUT" 2>&1 | tee "$OUT/app.txt"
 APP=${PIPESTATUS[0]}
 stop_runner
 
+# 虛擬定位: give the app location access up front (no prompt to answer) and
+# a position for the simulator to report.
+xcrun simctl location "$UDID" set 25.047924,121.517081 || true
+xcrun simctl privacy "$UDID" grant location-always com.openminis.ictrl \
+    || xcrun simctl privacy "$UDID" grant location com.openminis.ictrl || true
+start_runner 3
+python3 Tests/sim/e2e.py location "$OUT" 2>&1 | tee "$OUT/location.txt"
+LOC=${PIPESTATUS[0]}
+stop_runner
+DATA="$(xcrun simctl get_app_container "$UDID" com.openminis.ictrl data 2>/dev/null)"
+[ -n "$DATA" ] && cp "$DATA"/Library/Logs/iCTRL/*.log "$OUT/" 2>/dev/null
+
 xcrun simctl io "$UDID" screenshot "$OUT/final.png" 2>/dev/null
 # A crash that the run recovered from would otherwise go unseen.
 cp "$HOME"/Library/Logs/DiagnosticReports/iCTRL* "$OUT/" 2>/dev/null
-echo "engine=$ENGINE app=$APP"
-[ "$ENGINE" = 0 ] && [ "$APP" = 0 ]
+echo "engine=$ENGINE app=$APP location=$LOC"
+[ "$ENGINE" = 0 ] && [ "$APP" = 0 ] && [ "$LOC" = 0 ]

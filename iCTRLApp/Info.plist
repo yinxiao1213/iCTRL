@@ -63,6 +63,18 @@
 	<array>
 		<string>_ictrl._tcp</string>
 	</array>
+	<!-- 虛擬定位 keeps its DVT channel open from this process, so it must not
+	     be suspended while the game is in front: background location and a
+	     silent, mixed audio loop (see Location/LocationKeepAlive.swift). -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>location</string>
+	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>虛擬定位用定位讓 iCTRL 在背景繼續執行，並確認手機回報的位置已經是假定位。</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>虛擬定位用定位讓 iCTRL 在背景繼續執行，並確認手機回報的位置已經是假定位。</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>ictrl</string>

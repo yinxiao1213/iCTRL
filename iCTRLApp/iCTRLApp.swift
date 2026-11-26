@@ -8,6 +8,7 @@ struct iCTRLApp: App {
     @StateObject private var runnerAdmin: RunnerAdmin
     @StateObject private var scriptStore = ScriptStore()
     @StateObject private var scriptController: ScriptController
+    @StateObject private var location = LocationController()
     @State private var showPermissionAlert = false
     /// Outcome of a pairing file shared to the app, shown as an alert.
     @State private var sharedPairing: SharedPairingResult?
@@ -45,6 +46,8 @@ struct iCTRLApp: App {
             TabView {
                 ScriptListView()
                     .tabItem { Label("腳本", systemImage: "play.square.stack") }
+                LocationSimView()
+                    .tabItem { Label("定位", systemImage: "location.circle") }
                 NavigationStack {
                     SettingsView()
                         .environmentObject(appState)
@@ -55,6 +58,7 @@ struct iCTRLApp: App {
             .environmentObject(runnerAdmin)
             .environmentObject(scriptStore)
             .environmentObject(scriptController)
+            .environmentObject(location)
             .sheet(item: $appState.pendingAuthRequest) { request in
                 AuthRequestView(request: request)
                     .environmentObject(appState)

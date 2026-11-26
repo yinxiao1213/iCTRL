@@ -3,12 +3,17 @@
 
     Tests/sim/e2e.py engine OUT_DIR    the script engine, driven over RPC
     Tests/sim/e2e.py app OUT_DIR       the app, driven like a person would
+    Tests/sim/e2e.py location OUT_DIR  虛擬定位: the screen, and staying alive behind another app
 
 The screenshots land in OUT_DIR. Started by Tests/sim/run.sh.
 """
 import base64
+import datetime
+import glob
 import json
 import os
+import re
+import subprocess
 import sys
 import time
 import urllib.request
@@ -289,11 +294,186 @@ def app():
     shot("app-11-back")
 
 
+# ---------------------------------------------------------------- 虛擬定位
+
+def app_log_lines():
+    """Every line the app has logged, oldest run first (read off the simulator's disk)."""
+    try:
+        data = subprocess.check_output(["xcrun", "simctl", "get_app_container", "booted", APP, "data"],
+                                       text=True, stderr=subprocess.DEVNULL).strip()
+    except (subprocess.CalledProcessError, OSError):
+        return []
+    lines = []
+    for path in sorted(glob.glob(os.path.join(data, "Library", "Logs", "iCTRL", "*.log")), key=os.path.getmtime):
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines += f.read().splitlines()
+    return lines
+
+
+SET_LINE = re.compile(r"\[(\d\d):(\d\d):(\d\d)\.(\d+)\] .*\[sim\] set #\d+ (-?[\d.]+), (-?[\d.]+)")
+
+
+def sends():
+    """(seconds since midnight, lat, lon) for every point the app handed to the (stand-in) phone."""
+    out = []
+    for line in app_log_lines():
+        m = SET_LINE.match(line)
+        if m:
+            h, mi, sec, frac = m.group(1), m.group(2), m.group(3), m.group(4)
+            out.append((int(h) * 3600 + int(mi) * 60 + int(sec) + float("0." + frac),
+                        float(m.group(5)), float(m.group(6))))
+    return out
+
+
+def now_of_day():
+    n = datetime.datetime.now()
+    return n.hour * 3600 + n.minute * 60 + n.second + n.microsecond / 1e6
+
+
+def set_keepalive(on):
+    press("保活設定", exact=True)
+    time.sleep(1)
+    word = "開" if on else "關"
+    for name in ("背景音訊", "背景定位"):
+        if find(f"{name}：{word}", 2, APP, exact=True) is None:
+            press(name)
+            time.sleep(0.7)
+        check(f"{name} is {word}", find(f"{name}：{word}", 5, APP, exact=True) is not None)
+    shot("loc-keepalive-" + ("on" if on else "off"))
+    press("完成", exact=True)
+    time.sleep(1)
+
+
+def sends_behind(seconds, label):
+    """Put Settings in front for a while; count the points the app sent meanwhile."""
+    try_call("launch_app", {"bundle_id": SETTINGS})
+    end = time.time() + 20
+    front = {}
+    while time.time() < end and front.get("bundle_id") != SETTINGS:
+        time.sleep(1)
+        front = try_call("foreground_app") or {}
+    check(f"Settings is in front ({label})", front.get("bundle_id") == SETTINGS, front)
+    time.sleep(8)   # past the few seconds iOS gives any app that just left
+    start = now_of_day()
+    time.sleep(seconds)
+    stop = now_of_day()
+    count = len([s for s in sends() if start <= s[0] <= stop])
+    log(f"  {label}: {count} points sent in {seconds} s with Settings in front")
+    try_call("launch_app", {"bundle_id": APP})
+    time.sleep(3)
+    return count
+
+
+def location():
+    check("runner came up for the location test", wait_server())
+    time.sleep(3)
+    dismiss_alerts()
+    try_call("launch_app", {"bundle_id": APP})
+    for label in ("Allow While Using App", "使用 App 期間允許"):
+        found = try_call("find_element", {"element_id": label, "bundle_id": "com.apple.springboard"})
+        if found and found.get("ref"):
+            try_call("tap", {"ref": found["ref"]})
+    press("定位", 60, exact=True)
+    time.sleep(3)
+    shot("loc-1-tab")
+    check("starts on the real location", find("真實定位", 10, APP, exact=True) is not None)
+    check("says it is the simulator", find("模擬器測試模式", 5, APP) is not None)
+
+    # Straight lines: a directions lookup on a CI machine is not what is tested here.
+    if find("沿道路", 3, APP, exact=True):
+        press("沿道路", exact=True)
+    check("walks in straight lines", find("走直線", 5, APP, exact=True) is not None)
+
+    info = call("device_info")
+    w = info.get("point_width") or 402
+    h = info.get("point_height") or 874
+    call("tap", {"x": w / 2, "y": h * 0.42})
+    time.sleep(1.5)
+    check("a tap on the map picks a target", find("目標 2", 8, APP) is not None)
+    shot("loc-2-target")
+
+    press("瞬移", exact=True)
+    check("teleport shows the fake location", find("假定位中", 20, APP, exact=True) is not None)
+    time.sleep(2)
+    shot("loc-3-fake")
+    first = sends()
+    check("the point reached the phone side", len(first) >= 1, len(first))
+
+    # Standing still it re-sends every 4 s: that keeps the channel checked.
+    time.sleep(9)
+    check("standing still re-sends", len(sends()) - len(first) >= 2, len(sends()) - len(first))
+
+    # The question that matters: does it keep going behind another app?
+    # First without keep-alive, to see that the simulator does pause it at all.
+    set_keepalive(False)
+    paused = sends_behind(30, "keep-alive off")
+    set_keepalive(True)
+    kept = sends_behind(40, "keep-alive on")
+    check("with keep-alive on it keeps sending behind another app (every 4 s)", kept >= 8, kept)
+    if paused <= 2:
+        log(f"note: without keep-alive the app was paused ({paused} sends) — so the {kept} above are keep-alive's doing")
+    else:
+        log(f"note: without keep-alive it still sent {paused} times — the simulator did not pause it, "
+            f"so this run does not prove keep-alive on its own")
+    check("still fake after coming back", find("假定位中", 10, APP, exact=True) is not None)
+    shot("loc-4-back")
+
+    # Walk to a point a little way off.
+    call("tap", {"x": w / 2 + 70, "y": h * 0.42 - 50})
+    time.sleep(1)
+    before = len(sends())
+    press("走過去", exact=True)
+    check("walking says how far is left", find("步行中", 10, APP) is not None)
+    time.sleep(6)
+    shot("loc-5-walking")
+    walked = sends()[before:]
+    check("walking sends a point every second", len(walked) >= 4, len(walked))
+    if len(walked) >= 2:
+        a, b = walked[0], walked[-1]
+        check("and the points move", (a[1], a[2]) != (b[1], b[2]), (a, b))
+    press("停下", exact=True)
+    check("stop stands still", find("停在", 10, APP) is not None)
+
+    # The joystick moves it too.
+    press("搖桿", exact=True)
+    time.sleep(1)
+    pad = find("搖桿圓盤", 5, APP, exact=True)
+    if check("the joystick shows", pad is not None):
+        before = len(sends())
+        x, y = pad["center_x"], pad["center_y"]
+        call("drag", {"from_x": x, "from_y": y, "to_x": x, "to_y": y - 50, "duration": 3})
+        time.sleep(1)
+        moved = sends()[before:]
+        check("pushing the joystick sends points", len(moved) >= 2, len(moved))
+        if len(moved) >= 2:
+            check("pushing up goes north", moved[-1][1] > moved[0][1], (moved[0], moved[-1]))
+    shot("loc-6-joystick")
+    press("搖桿", exact=True)
+
+    # Favorites.
+    press("收藏這裡", exact=True)
+    time.sleep(1)
+    press("儲存", exact=True)
+    press("收藏清單", exact=True)
+    check("the favorite is listed", find("收藏 1", 8, APP, exact=True) is not None)
+    shot("loc-7-favorites")
+    press("完成", exact=True)
+
+    press("恢復真實定位", exact=True)
+    check("restore goes back to the real location", find("真實定位", 10, APP, exact=True) is not None)
+    time.sleep(1)
+    check("and closes the channel", any("[sim] clear" in line for line in app_log_lines()))
+    count = len(sends())
+    time.sleep(6)
+    check("nothing is sent after that", len(sends()) == count, len(sends()) - count)
+    shot("loc-8-restored")
+
+
 def main():
     mode = sys.argv[1]
     os.makedirs(OUT, exist_ok=True)
     try:
-        (engine if mode == "engine" else app)()
+        {"engine": engine, "app": app, "location": location}[mode]()
     except SystemExit as e:
         log("stopped:", e)
         results.append(False)

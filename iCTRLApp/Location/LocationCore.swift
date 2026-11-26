@@ -489,7 +489,19 @@ final class LocationSimulator {
         lastMoveTime = t
         position = pos
 
-        let due = mustSend || lastSent != pos || t - lastSendTime >= timing.hold
+        // Moving, the phone hears about it once per update interval however
+        // often commands come in (a joystick drag fires many times a second).
+        let due: Bool
+        if mustSend {
+            due = true
+        } else if lastSent == pos {
+            due = t - lastSendTime >= timing.hold
+        } else if mode == .still {
+            due = true  // just arrived or stopped: say where at once
+        } else {
+            let every = mode == .walking ? timing.move : timing.stick
+            due = t - lastSendTime >= every - 0.001
+        }
         guard due else { return }
 
         if !connected {
@@ -533,9 +545,11 @@ final class LocationSimulator {
         if !connected {
             wake = nextAttempt
         } else {
-            wake = lastSendTime + timing.hold
-            if mode == .walking { wake = min(wake, (lastMoveTime ?? t) + timing.move) }
-            if mode == .joystick { wake = min(wake, (lastMoveTime ?? t) + timing.stick) }
+            switch mode {
+            case .still: wake = lastSendTime + timing.hold
+            case .walking: wake = lastSendTime + timing.move
+            case .joystick: wake = lastSendTime + timing.stick
+            }
         }
         return max(wake, t + 0.02)
     }
