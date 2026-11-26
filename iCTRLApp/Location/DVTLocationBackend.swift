@@ -20,6 +20,11 @@ final class DVTLocationBackend: LocationBackend {
     private var server: OpaquePointer?
     private var channel: OpaquePointer?
 
+    /// LocalDevVPN's address for this device — DDIMounter's, repeated here
+    /// because that class belongs to the main thread and this runs off it.
+    static let tunnelAddress = "10.7.0.1"
+    static let tunnelPort: UInt16 = 49152
+
     deinit { disconnect() }
 
     func connect() throws {
@@ -43,8 +48,8 @@ final class DVTLocationBackend: LocationBackend {
 
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = DDIMounter.tunnelPort.bigEndian
-        guard DDIMounter.tunnelAddress.withCString({ inet_pton(AF_INET, $0, &addr.sin_addr) }) == 1 else {
+        addr.sin_port = Self.tunnelPort.bigEndian
+        guard Self.tunnelAddress.withCString({ inet_pton(AF_INET, $0, &addr.sin_addr) }) == 1 else {
             throw LocationBackendError("通道位址錯誤")
         }
         do {

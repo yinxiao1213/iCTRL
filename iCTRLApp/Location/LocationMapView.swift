@@ -80,7 +80,11 @@ struct LocationMapView: UIViewRepresentable {
         }
 
         func sync(_ map: MKMapView) {
-            place(targetPin, at: parent.target, on: map, title: "目標")
+            // Standing on the target, the green pin says it all.
+            let target = parent.target.flatMap { t in
+                parent.position.map { GeoMath.distance($0, t) < 1 } == true ? nil : t
+            }
+            place(targetPin, at: target, on: map, title: "目標")
             place(fakePin, at: parent.position, on: map, title: "假定位")
 
             let wanted = Dictionary(uniqueKeysWithValues: parent.favorites.map { ($0.id, $0) })

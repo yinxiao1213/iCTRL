@@ -180,7 +180,9 @@ struct LocationSimView: View {
 
     /// Whether what iOS reports matches what we sent: the proof it took.
     private var systemCheck: String? {
-        guard status.isFake, let fake = status.simulated, let sys = loc.systemLocation else { return nil }
+        // The simulator's stand-in never moves the reported location.
+        guard !LocationController.isSimulator,
+              status.isFake, let fake = status.simulated, let sys = loc.systemLocation else { return nil }
         let d = GeoMath.distance(fake, sys)
         if d < 25 { return "✓ 系統回報的位置就是假定位" }
         if status.motion != .still { return "系統回報的位置跟在後面（差 \(Self.meters(d))）" }
