@@ -347,11 +347,18 @@ def set_keepalive(on):
 def sends_behind(seconds, label):
     """Put Settings in front for a while; count the points the app sent meanwhile."""
     try_call("launch_app", {"bundle_id": SETTINGS})
-    end = time.time() + 20
+    end = time.time() + 30
     front = {}
+    nudged = False
     while time.time() < end and front.get("bundle_id") != SETTINGS:
         time.sleep(1)
         front = try_call("foreground_app") or {}
+        # Settings starting cold on a slow CI machine can outlast launch_app;
+        # the simulator itself can still bring it up.
+        if not nudged and front.get("bundle_id") != SETTINGS and time.time() > end - 22:
+            nudged = True
+            subprocess.run(["xcrun", "simctl", "launch", "booted", SETTINGS],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     check(f"Settings is in front ({label})", front.get("bundle_id") == SETTINGS, front)
     time.sleep(8)   # past the few seconds iOS gives any app that just left
     start = now_of_day()
