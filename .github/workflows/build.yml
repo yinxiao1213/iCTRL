@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [script-recorder]
+    branches: [script-recorder, location-sim]
   workflow_dispatch: {}
 
 permissions:
@@ -15,6 +15,9 @@ concurrency:
 env:
   # The Xcode the official iCTRL releases are built with.
   XCODE: /Applications/Xcode_27.1.app
+  # Each branch publishes to its own release, so one never overwrites the
+  # other's IPAs: script-recorder → ci, location-sim → location-ci.
+  REL: ${{ github.ref_name == 'location-sim' && 'location-ci' || 'ci' }}
 
 jobs:
   ipa:
@@ -38,6 +41,7 @@ jobs:
         run: |
           set -o pipefail
           bash Scripts/test-script-engine.sh 2>&1 | tee build.log
+          bash Scripts/test-location-sim.sh 2>&1 | tee -a build.log
 
       - name: Build
         run: |
@@ -51,12 +55,12 @@ jobs:
           grep -E "error:|FAIL |passed$|BUILD (SUCCEEDED|FAILED)|\*\* .* \*\*|^make: |❌|🔴" build.log | sort -u | head -300 > errors.txt || true
           tail -c 3000000 build.log > build-tail.log
           printf '%s %s\n' "$GITHUB_SHA" "${{ job.status }}" > status.txt
-          gh release view ci >/dev/null 2>&1 || gh release create ci --prerelease --title "Latest build" --notes "Built by GitHub Actions from the script-recorder branch." --target "$GITHUB_SHA"
+          gh release view "$REL" >/dev/null 2>&1 || gh release create "$REL" --prerelease --title "Latest build ($GITHUB_REF_NAME)" --notes "Built by GitHub Actions from the $GITHUB_REF_NAME branch." --target "$GITHUB_SHA"
           FILES="status.txt errors.txt env.log build-tail.log"
           for f in release/iCTRL.ipa release/iCTRLUITests-Runner.ipa; do
             [ -f "$f" ] && FILES="$FILES $f"
           done
-          gh release upload ci $FILES --clobber
+          gh release upload "$REL" $FILES --clobber
 
   simulator:
     runs-on: xcode-27
@@ -96,5 +100,5 @@ jobs:
           printf '%s %s\n' "$GITHUB_SHA" "${{ job.status }}" > sim-out/status.txt
           tar czf sim-report.tgz -C sim-out .
           printf '%s %s\n' "$GITHUB_SHA" "${{ job.status }}" > sim-status.txt
-          gh release view ci >/dev/null 2>&1 || gh release create ci --prerelease --title "Latest build" --notes "Built by GitHub Actions from the script-recorder branch." --target "$GITHUB_SHA"
-          gh release upload ci sim-report.tgz sim-status.txt --clobber
+          gh release view "$REL" >/dev/null 2>&1 || gh release create "$REL" --prerelease --title "Latest build ($GITHUB_REF_NAME)" --notes "Built by GitHub Actions from the $GITHUB_REF_NAME branch." --target "$GITHUB_SHA"
+          gh release upload "$REL" sim-report.tgz sim-status.txt --clobber
